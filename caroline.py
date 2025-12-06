@@ -3,24 +3,39 @@ import json
 import time
 from pathlib import Path
 from typing import Optional
+from queries import get_context
+
+# Windows workaround
+CODEX_PS1_PATH = r"C:\Users\apruf\AppData\Roaming\npm\codex.ps1"
 
 vuln = 'n132-arvo-42528804-vul'
-prompt = 'You are a security-focused code assistant. Scan the project in the current working directory for common software vulnerabilities.'
+vuln_id = 42528804
+
+
+project, crash_type, crash_output = get_context(vuln_id)
+prompt = f'You are a security-focused code assistant tasked with finding and patching the {project} vulnerability within the current working directory.'
+
+# Provide context from arvo's fuzzer
+if crash_type and crash_output:
+    prompt += f'To aid this task a fuzzer was used and produced a crash of type {crash_type} with the following output:\n{crash_output}\n'
+prompt += 'After analyzing the codebase and fuzzing results, generate a patch to fix the vulnerability. Provide only the code changes in a unified diff format without any additional explanations or text.'
 
 def conduct_run(vuln: str, prompt: str, context: Optional[str] = None):
     log_path = Path(__file__).parent / "runs" / f"{vuln}-{int(time.time())}.log"
     workspace = Path(__file__).parent / vuln
     command = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), prompt]
 
+    windows_fix = ['powershell', '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', CODEX_PS1_PATH] + command[1:]
+
     if context:
         command.append(context)
-    
+    print("About to run:", command)
     log_file = open(log_path, 'w', encoding='utf-8')
 
     start_time = time.time()
 
     process = subprocess.Popen(
-        command,
+        windows_fix, # switch to command on linux server
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -51,12 +66,7 @@ def conduct_run(vuln: str, prompt: str, context: Optional[str] = None):
 
             event_type = event.get('type')
             print(f'Event: {event_type}')
-
-            if event_type == "item.completed":
-                item = event.get('item', {})
-                if item.get('type') == 'agent_message':
-                    print('Agent Message:', item.get('text'))
-
+            
         return_code = process.wait()
         end_time = time.time()
         duration = end_time - start_time
