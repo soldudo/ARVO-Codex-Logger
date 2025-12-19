@@ -1,0 +1,4 @@
+- Added output buffer size checks before generating DH private/public keys and shared secrets to return `BUFFER_E` instead of overrunning caller buffers (`src/wolfssl/wolfcrypt/src/dh.c:1184-1303,1994-2005`).
+- Set server DH public/private buffer lengths to their allocated capacity before key generation so the new checks validate full space, preventing heap overflow when public buffer is too small (`src/wolfssl/src/internal.c:25065-25094`).
+- Included new size validations for DH key agreement to maintain consistent buffer safety.
+- Tests were not run as part of this update; consider rerunning DH-related tests or fuzz testing to verify these changes thoroughly.
