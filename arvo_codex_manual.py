@@ -1,11 +1,10 @@
 import subprocess
 import threading
-import sys
 import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TextIO
 from queries import get_context
 
 log_lock = threading.Lock()
