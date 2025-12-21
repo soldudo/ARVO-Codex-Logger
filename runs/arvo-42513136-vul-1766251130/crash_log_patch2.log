@@ -1,0 +1,37 @@
+/tmp/libfuzzer.2805464: Йз0057ойкл0024: file format is ambiguous
+/tmp/libfuzzer.2805464: Matching formats: a.out-i386 a.out-i386-bsd a.out-i386-lynx a.out-pc532-mach
+=================================================================
+==2805464==ERROR: AddressSanitizer: attempting double-free on 0x621000012d00 in thread T0:
+    #0 0x49d6f2  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x49d6f2)
+    #1 0x4dccbd  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dccbd)
+    #2 0x4dd072  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd072)
+    #3 0x4dd1a0  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd1a0)
+    #4 0x4dd8fe  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd8fe)
+    #5 0x4d733a  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4d733a)
+    #6 0x4d710d  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4d710d)
+    #7 0x7b1bd622a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9)
+    #8 0x7b1bd622a28a  (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a)
+    #9 0x41e65d  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x41e65d)
+
+0x621000012d00 is located 0 bytes inside of 4112-byte region [0x621000012d00,0x621000013d10)
+freed by thread T0 here:
+    #0 0x49d6f2  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x49d6f2)
+    #1 0x5d4273  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x5d4273)
+    #2 0x4dcca6  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dcca6)
+    #3 0x4dd072  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd072)
+    #4 0x4dd1a0  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd1a0)
+    #5 0x4dd8fe  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd8fe)
+    #6 0x4d733a  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4d733a)
+
+previously allocated by thread T0 here:
+    #0 0x49d95d  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x49d95d)
+    #1 0xa8cb5e  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0xa8cb5e)
+    #2 0xa85a6d  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0xa85a6d)
+    #3 0x4dcbbe  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dcbbe)
+    #4 0x4dd072  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd072)
+    #5 0x4dd1a0  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd1a0)
+    #6 0x4dd8fe  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4dd8fe)
+    #7 0x4d733a  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x4d733a)
+
+SUMMARY: AddressSanitizer: double-free (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42513136/out/fuzz_objdump_safe+0x49d6f2) 
+==2805464==ABORTING

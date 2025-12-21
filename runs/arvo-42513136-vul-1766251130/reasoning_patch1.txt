@@ -1,0 +1,27 @@
+I tracked the ASan double-free to `fuzz_slurp_symtab` in `binutils-
+preconditions/ada_objdump.h`: the temporary symbol table buffer `sy` was being freed
+twice along the same call path (the canonicalize failure cleanup and the trailing `if
+(syms) free(sy);` block), which matches the two close-by free call sites in the crash
+stack. The fix is to free the buffer exactly once after `bfd_canonicalize_symtab` and
+return early on failure.
+
+Apply this edit in `ada_objdump.h` (around lines 61–70):
+
+```c
+  symcount = bfd_canonicalize_symtab (abfd, sy);
+  /* Free the caller-owned table once before returning to avoid double frees.  */
+  if (sy)
+    free (sy);
+
+  if (symcount < 0)
+    return 0;
+
+  return 1;
+```
+
+(Replace the old two `free` blocks at lines 61–72.)
+
+Note: the filesystem here is read-only, so I couldn’t save the change; please apply the
+above patch in `binutils-preconditions/ada_objdump.h` to resolve the heap double-free.
+Next step after updating: rebuild `fuzz_objdump_safe` and re-run the reproducer to
+confirm the ASan crash is gone.

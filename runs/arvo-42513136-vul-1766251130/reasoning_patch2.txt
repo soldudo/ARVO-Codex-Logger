@@ -1,0 +1,46 @@
+"**Removing double frees and initializing pointers**
+
+The code has double frees for `matching` from `list_matching_formats` and later frees
+causing errors; the fix removes redundant `free(matching)` calls and initializes
+`matching` to NULL before use to avoid misuse. Changes involve deleting frees at lines
+95 and 116 in one file and line 239 in another, plus ensuring no double free happens
+while avoiding leaks. The environment is read-only, so patches can't be applied directly
+and must be provided as instructions with diffs."}}} "I couldn\u2019t write to the read-
+only workspace, but here\u2019s the exact fix to remove the remaining double-frees.
+
+Changes to apply:
+
+- `binutils-preconditions/ada_objdump.h` - In `fuzz_display_object_bfd`, both ambiguous-
+format branches already call `list_matching_formats(matching)`, which frees `matching`.
+Remove the extra `free (matching);` calls immediately after `list_matching_formats` at
+the first ambiguous branch (around lines 93\u201397) and the second one (around lines
+113\u2013117). No other changes are needed there.
+
+- `binutils-preconditions/ada_nm.h` - In `fuzz_display_file2`, the ambiguous-format
+branch also calls `list_matching_formats(matching)` (which frees it). Remove the
+subsequent `free (matching);` call at lines 239\u2013241.
+
+After applying, the relevant snippets should look like:
+
+- `ada_objdump.h` (first branch):
+  ```c
+  if (bfd_get_error () == bfd_error_file_ambiguously_recognized)
+    {
+      nonfatal (bfd_get_filename (abfd));
+      list_matching_formats (matching);
+      return 1;
+    }
+  ```
+and similarly for the second branch near the end (drop the `free`).
+
+- `ada_nm.h` ambiguous branch:
+  ```c
+  if (bfd_get_error () == bfd_error_file_ambiguously_recognized)
+    {
+      list_matching_formats (matching);
+    }
+  ```
+
+These removals eliminate the double-free of the `matching` vector reported in the
+updated ASan crash. Once you apply the edits, rebuild `fuzz_objdump_safe` and rerun the
+reproducer to confirm the crash is gone."}}}
