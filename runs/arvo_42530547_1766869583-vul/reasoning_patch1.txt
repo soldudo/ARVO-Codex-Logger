@@ -1,0 +1,4 @@
+[agent_message]: Converted DES parameter length variables to `size_t` to match ASN.1 decoder expectations and avoid overwriting the 4-byte `int` stack slot during 8-byte length writes. Updates in `src/libopensc/pkcs15-algo.c`: lines 46-62 and 69-74.
+
+Next step: run the relevant ASN.1/PKCS#11 fuzz or unit tests to confirm no remaining overflows.
+Codex finished with return code 0 in 38.96 seconds.
