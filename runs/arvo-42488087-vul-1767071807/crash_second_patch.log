@@ -1,0 +1,12 @@
+======================= INFO =========================
+This binary is built for AFL-fuzz.
+To run the target function on individual input(s) execute this:
+  /out/fuzzer-wolfssl-server-randomize < INPUT_FILE
+or
+  /out/fuzzer-wolfssl-server-randomize INPUT_FILE1 [INPUT_FILE2 ... ]
+To fuzz with afl-fuzz execute this:
+  afl-fuzz [afl-flags] /out/fuzzer-wolfssl-server-randomize [-N]
+afl-fuzz will run N iterations before re-spawning the process (default: 1000)
+======================================================
+Reading 432 bytes from /tmp/poc
+Execution successful

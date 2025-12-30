@@ -1,0 +1,82 @@
+======================= INFO =========================
+This binary is built for AFL-fuzz.
+To run the target function on individual input(s) execute this:
+  /out/fuzzer-wolfssl-server-randomize < INPUT_FILE
+or
+  /out/fuzzer-wolfssl-server-randomize INPUT_FILE1 [INPUT_FILE2 ... ]
+To fuzz with afl-fuzz execute this:
+  afl-fuzz [afl-flags] /out/fuzzer-wolfssl-server-randomize [-N]
+afl-fuzz will run N iterations before re-spawning the process (default: 1000)
+======================================================
+Reading 432 bytes from /tmp/poc
+=================================================================
+[1m[31m==7==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000fc0 at pc 0x00000060222d bp 0x7fffffffdaa0 sp 0x7fffffffda98
+[1m[0m[1m[34mWRITE of size 1 at 0x602000000fc0 thread T0[1m[0m
+SCARINESS: 31 (1-byte-write-heap-buffer-overflow)
+    #0 0x60222c in fp_to_unsigned_bin_at_pos /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/tfm.c:3597:15
+    #1 0x602334 in fp_to_unsigned_bin /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/tfm.c:3634:7
+    #2 0x603341 in mp_to_unsigned_bin /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/tfm.c:4231:10
+    #3 0x5b1926 in GeneratePublicDh /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/dh.c:1285:21
+    #4 0x5b0a56 in wc_DhGenerateKeyPair_Sync /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/dh.c:1316:31
+    #5 0x5b097c in wc_DhGenerateKeyPair /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/dh.c:1833:15
+    #6 0x6405d9 in DhGenKeyPair /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:4950:11
+    #7 0x67c0d9 in SendServerKeyExchange /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:25131:31
+    #8 0x4e88bf in wolfSSL_accept /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/ssl.c:12302:36
+    #9 0x4ccf82 in LLVMFuzzerTestOneInput /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfssl-fuzzers/server.c:79:13
+    #10 0x4cd89e in ExecuteFilesOnyByOne /src/libfuzzer/afl/afl_driver.cpp:217:5
+    #11 0x4cd89e in main /src/libfuzzer/afl/afl_driver.cpp:254:12
+    #12 0x7ffff6ee583f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2083f)
+    #13 0x41e5b8 in _start (/out/fuzzer-wolfssl-server-randomize+0x41e5b8)
+
+DEDUP_TOKEN: fp_to_unsigned_bin_at_pos--fp_to_unsigned_bin--mp_to_unsigned_bin
+[1m[32m0x602000000fc0 is located 0 bytes to the right of 16-byte region [0x602000000fb0,0x602000000fc0)
+[1m[0m[1m[35mallocated by thread T0 here:[1m[0m
+    #0 0x499acd in malloc /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:145:3
+    #1 0x4cc72b in wolfCrypt_custom_malloc /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/include/fuzzers/shared.h:180:39
+    #2 0x4d16be in wolfSSL_Malloc /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/memory.c:135:15
+    #3 0x698f01 in GetDhPublicKey /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:21193:16
+    #4 0x68e369 in DoServerKeyExchange /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:21532:27
+    #5 0x68b1cd in DoHandShakeMsgType /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:12569:15
+    #6 0x6619ef in DoHandShakeMsg /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:12779:15
+    #7 0x65b428 in ProcessReply /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/internal.c:15422:31
+    #8 0x4e856d in wolfSSL_accept /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/src/ssl.c:12239:36
+    #9 0x4ccf82 in LLVMFuzzerTestOneInput /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfssl-fuzzers/server.c:79:13
+    #10 0x4cd89e in ExecuteFilesOnyByOne /src/libfuzzer/afl/afl_driver.cpp:217:5
+    #11 0x4cd89e in main /src/libfuzzer/afl/afl_driver.cpp:254:12
+    #12 0x7ffff6ee583f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2083f)
+
+DEDUP_TOKEN: malloc--wolfCrypt_custom_malloc--wolfSSL_Malloc
+SUMMARY: AddressSanitizer: heap-buffer-overflow /src/wolf-ssl-ssh-fuzzers/oss-fuzz/projects/wolf-ssl-ssh/fuzzers/wolfssl/wolfssl/wolfcrypt/src/tfm.c:3597:15 in fp_to_unsigned_bin_at_pos
+Shadow bytes around the buggy address:
+  0x0c047fff81a0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff81b0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff81c0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff81d0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff81e0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[35mfd[1m[0m [1m[31mfa[1m[0m
+=>0x0c047fff81f0: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[0m02[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[0m00[1m[0m [1m[0m00[1m[0m[[1m[31mfa[1m[0m][1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff8200: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff8210: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff8220: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff8230: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+  0x0c047fff8240: [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m [1m[31mfa[1m[0m
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           [1m[0m00[1m[0m
+  Partially addressable: [1m[0m01[1m[0m [1m[0m02[1m[0m [1m[0m03[1m[0m [1m[0m04[1m[0m [1m[0m05[1m[0m [1m[0m06[1m[0m [1m[0m07[1m[0m 
+  Heap left redzone:       [1m[31mfa[1m[0m
+  Freed heap region:       [1m[35mfd[1m[0m
+  Stack left redzone:      [1m[31mf1[1m[0m
+  Stack mid redzone:       [1m[31mf2[1m[0m
+  Stack right redzone:     [1m[31mf3[1m[0m
+  Stack after return:      [1m[35mf5[1m[0m
+  Stack use after scope:   [1m[35mf8[1m[0m
+  Global redzone:          [1m[31mf9[1m[0m
+  Global init order:       [1m[36mf6[1m[0m
+  Poisoned by user:        [1m[34mf7[1m[0m
+  Container overflow:      [1m[34mfc[1m[0m
+  Array cookie:            [1m[31mac[1m[0m
+  Intra object redzone:    [1m[33mbb[1m[0m
+  ASan internal:           [1m[33mfe[1m[0m
+  Left alloca redzone:     [1m[34mca[1m[0m
+  Right alloca redzone:    [1m[34mcb[1m[0m
+  Shadow gap:              [1m[0mcc[1m[0m
+==7==ABORTING

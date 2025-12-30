@@ -1,0 +1,67 @@
+=================================================================
+==7==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x50b000000204 at pc 0x5a68dd18994e bp 0x7ffca44f5fb0 sp 0x7ffca44f5fa8
+WRITE of size 1 at 0x50b000000204 thread T0
+SCARINESS: 31 (1-byte-write-heap-buffer-overflow)
+    #0 0x5a68dd18994d in xmlParsePubidLiteral /src/libxml2/parser.c:4458:13
+    #1 0x5a68dd18b04b in xmlParseExternalID /src/libxml2/parser.c:4782:14
+    #2 0x5a68dd1916f9 in xmlParseEntityDecl /src/libxml2/parser.c:5531:16
+    #3 0x5a68dd1b0f6d in xmlParseInternalSubset /src/libxml2/parser.c:8036:17
+    #4 0x5a68dd1affba in xmlParseDocument /src/libxml2/parser.c:10449:6
+    #5 0x5a68dd1bfd47 in xmlCtxtParseDocument /src/libxml2/parser.c:13300:5
+    #6 0x5a68dd3085e4 in xmlSchemaAddSchemaDoc /src/libxml2/xmlschemas.c:10294:12
+    #7 0x5a68dd3063ab in xmlSchemaParse /src/libxml2/xmlschemas.c:20900:11
+    #8 0x5a68dd15af0b in LLVMFuzzerTestOneInput /src/libxml2/fuzz/schema.c:48:14
+    #9 0x5a68dd15d61f in main (/out/schema+0x15561f)
+    #10 0x7f94fac07082 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x24082) (BuildId: 5792732f783158c66fb4f3756458ca24e46e827d)
+    #11 0x5a68dd08275d in _start (/out/schema+0x7a75d)
+
+DEDUP_TOKEN: xmlParsePubidLiteral--xmlParseExternalID--xmlParseEntityDecl
+0x50b000000204 is located 0 bytes after 100-byte region [0x50b0000001a0,0x50b000000204)
+allocated by thread T0 here:
+    #0 0x5a68dd11bb5c in realloc /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:82:3
+    #1 0x5a68dd15b2e8 in xmlFuzzRealloc /src/libxml2/fuzz/fuzz.c:143:11
+    #2 0x5a68dd18944b in xmlParsePubidLiteral /src/libxml2/parser.c:4449:12
+    #3 0x5a68dd18b04b in xmlParseExternalID /src/libxml2/parser.c:4782:14
+    #4 0x5a68dd1916f9 in xmlParseEntityDecl /src/libxml2/parser.c:5531:16
+    #5 0x5a68dd1b0f6d in xmlParseInternalSubset /src/libxml2/parser.c:8036:17
+    #6 0x5a68dd1affba in xmlParseDocument /src/libxml2/parser.c:10449:6
+    #7 0x5a68dd1bfd47 in xmlCtxtParseDocument /src/libxml2/parser.c:13300:5
+    #8 0x5a68dd3085e4 in xmlSchemaAddSchemaDoc /src/libxml2/xmlschemas.c:10294:12
+    #9 0x5a68dd3063ab in xmlSchemaParse /src/libxml2/xmlschemas.c:20900:11
+    #10 0x5a68dd15af0b in LLVMFuzzerTestOneInput /src/libxml2/fuzz/schema.c:48:14
+    #11 0x5a68dd15d61f in main (/out/schema+0x15561f)
+
+DEDUP_TOKEN: __interceptor_realloc--xmlFuzzRealloc--xmlParsePubidLiteral
+SUMMARY: AddressSanitizer: heap-buffer-overflow /src/libxml2/parser.c:4458:13 in xmlParsePubidLiteral
+Shadow bytes around the buggy address:
+  0x50afffffff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x50b000000000: fa fa fa fa fa fa fa fa fd fd fd fd fd fd fd fd
+  0x50b000000080: fd fd fd fd fd fa fa fa fa fa fa fa fa fa fd fd
+  0x50b000000100: fd fd fd fd fd fd fd fd fd fd fd fa fa fa fa fa
+  0x50b000000180: fa fa fa fa 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x50b000000200:[04]fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50b000000280: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50b000000300: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50b000000380: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50b000000400: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50b000000480: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==7==ABORTING

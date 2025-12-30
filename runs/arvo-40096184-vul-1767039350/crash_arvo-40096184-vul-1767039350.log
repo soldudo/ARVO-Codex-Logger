@@ -1,0 +1,81 @@
+======================= INFO =========================
+This binary is built for AFL-fuzz.
+To run the target function on individual input(s) execute this:
+  /out/android_codec < INPUT_FILE
+or
+  /out/android_codec INPUT_FILE1 [INPUT_FILE2 ... ]
+To fuzz with afl-fuzz execute this:
+  afl-fuzz [afl-flags] /out/android_codec [-N]
+afl-fuzz will run N iterations before re-spawning the process (default: 1000)
+======================================================
+Reading 33 bytes from /tmp/poc
+=================================================================
+==7==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x624000003fec at pc 0x0000009bd59e bp 0x7fff0de7bb90 sp 0x7fff0de7bb88
+WRITE of size 4 at 0x624000003fec thread T0
+SCARINESS: 36 (4-byte-write-heap-buffer-overflow)
+    #0 0x9bd59d in swizzle_index_to_n32(void*, unsigned char const*, int, int, int, int, unsigned int const*) /src/skia/out/Fuzz/../../src/codec/SkSwizzler.cpp:237:16
+    #1 0x9c0236 in SkSwizzler::swizzle(void*, unsigned char const*) /src/skia/out/Fuzz/../../src/codec/SkSwizzler.cpp:1233:5
+    #2 0x9b3f5c in SkGifCodec::haveDecodedRow(int, unsigned char const*, int, int, bool) /src/skia/out/Fuzz/../../src/codec/SkGifCodec.cpp:497:15
+    #3 0x9c3fe7 in SkGIFLZWContext::outputRow(unsigned char const*) /src/skia/out/Fuzz/../../third_party/gif/SkGifImageReader.cpp:162:15
+    #4 0x9c4e08 in SkGIFLZWContext::doLZW(unsigned char const*, unsigned long) /src/skia/out/Fuzz/../../third_party/gif/SkGifImageReader.cpp:299:17
+    #5 0x9c60d2 in SkGIFFrameContext::decode(SkStreamBuffer*, SkGifCodec*, bool*) /src/skia/out/Fuzz/../../third_party/gif/SkGifImageReader.cpp:404:28
+    #6 0x9b32de in SkGifCodec::decodeFrame(bool, SkCodec::Options const&, int*) /src/skia/out/Fuzz/../../src/codec/SkGifCodec.cpp:374:39
+    #7 0x9b76b1 in SkSampledCodec::sampledDecode(SkImageInfo const&, void*, unsigned long, SkAndroidCodec::AndroidOptions const&) /src/skia/out/Fuzz/../../src/codec/SkSampledCodec.cpp:247:62
+    #8 0x9b6965 in SkSampledCodec::onGetAndroidPixels(SkImageInfo const&, void*, unsigned long, SkAndroidCodec::AndroidOptions const&) /src/skia/out/Fuzz/../../src/codec/SkSampledCodec.cpp:87:22
+    #9 0x9a900c in SkAndroidCodec::getAndroidPixels(SkImageInfo const&, void*, unsigned long, SkAndroidCodec::AndroidOptions const*) /src/skia/out/Fuzz/../../src/codec/SkAndroidCodec.cpp:393:22
+    #10 0x7a2ba7 in FuzzAndroidCodec(sk_sp<SkData>, unsigned char) /src/skia/out/Fuzz/../../fuzz/oss_fuzz/FuzzAndroidCodec.cpp:33:26
+    #11 0x7a3636 in LLVMFuzzerTestOneInput /src/skia/out/Fuzz/../../fuzz/oss_fuzz/FuzzAndroidCodec.cpp:60:5
+    #12 0x79affe in ExecuteFilesOnyByOne(int, char**) /src/libfuzzer/afl/afl_driver.cpp:301:5
+    #13 0x79b56e in main /src/libfuzzer/afl/afl_driver.cpp:339:12
+    #14 0x71131ac8f82f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2082f)
+    #15 0x6943f8 in _start (/out/android_codec+0x6943f8)
+
+DEDUP_TOKEN: swizzle_index_to_n32(void*, unsigned char const*, int, int, int, int, unsigned int const*)--SkSwizzler::swizzle(void*, unsigned char const*)--SkGifCodec::haveDecodedRow(int, unsigned char const*, int, int, bool)
+0x624000003fec is located 0 bytes to the right of 7916-byte region [0x624000002100,0x624000003fec)
+allocated by thread T0 here:
+    #0 0x761baf in __interceptor_malloc /src/llvm/projects/compiler-rt/lib/asan/asan_malloc_linux.cc:146
+    #1 0x9c3563 in sk_malloc_flags(unsigned long, unsigned int) /src/skia/out/Fuzz/../../src/ports/SkMemory_malloc.cpp:71:13
+    #2 0x8158b8 in SkMallocPixelRef::MakeUsing(void* (*)(unsigned long), SkImageInfo const&, unsigned long) /src/skia/out/Fuzz/../../src/core/SkMallocPixelRef.cpp:81:18
+    #3 0x8159c3 in SkMallocPixelRef::MakeAllocate(SkImageInfo const&, unsigned long) /src/skia/out/Fuzz/../../src/core/SkMallocPixelRef.cpp:91:12
+    #4 0x7ab3f9 in SkBitmap::tryAllocPixels(SkImageInfo const&, unsigned long) /src/skia/out/Fuzz/../../src/core/SkBitmap.cpp:238:28
+    #5 0x7a2b06 in FuzzAndroidCodec(sk_sp<SkData>, unsigned char) /src/skia/out/Fuzz/../../fuzz/oss_fuzz/FuzzAndroidCodec.cpp:25:13
+    #6 0x7a3636 in LLVMFuzzerTestOneInput /src/skia/out/Fuzz/../../fuzz/oss_fuzz/FuzzAndroidCodec.cpp:60:5
+    #7 0x79affe in ExecuteFilesOnyByOne(int, char**) /src/libfuzzer/afl/afl_driver.cpp:301:5
+    #8 0x79b56e in main /src/libfuzzer/afl/afl_driver.cpp:339:12
+    #9 0x71131ac8f82f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2082f)
+
+DEDUP_TOKEN: __interceptor_malloc--sk_malloc_flags(unsigned long, unsigned int)--SkMallocPixelRef::MakeUsing(void* (*)(unsigned long), SkImageInfo const&, unsigned long)
+SUMMARY: AddressSanitizer: heap-buffer-overflow /src/skia/out/Fuzz/../../src/codec/SkSwizzler.cpp:237:16 in swizzle_index_to_n32(void*, unsigned char const*, int, int, int, int, unsigned int const*)
+Shadow bytes around the buggy address:
+  0x0c487fff87a0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c487fff87b0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c487fff87c0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c487fff87d0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c487fff87e0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x0c487fff87f0: 00 00 00 00 00 00 00 00 00 00 00 00 00[04]fa fa
+  0x0c487fff8800: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c487fff8810: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c487fff8820: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c487fff8830: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c487fff8840: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==7==ABORTING

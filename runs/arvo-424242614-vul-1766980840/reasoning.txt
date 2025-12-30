@@ -1,0 +1,1 @@
+Updated xmlParsePubidLiteral to resize the public ID buffer using the newly computed capacity, preventing writes past the allocated memory when growing the buffer (parser.c:4449).\n\nTests not run (not requested); consider running the parser/schema fuzzers or existing test suite to confirm.

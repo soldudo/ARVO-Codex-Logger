@@ -1,0 +1,9 @@
+[Thinking]: Summarizing swizzle bounds check fix
+
+Added a bounds check to ensure offset plus swizzle width doesn't exceed the destination row capacity, preventing potential overflow on malformed frames. This check applies to both repeat copy and blending branches, reusing the cached width for blend lines. Changes are in `src/codec/SkGifCodec.cpp` around lines 474–541. No tests were run yet; next steps include verifying with fuzzers or unit tests, especially for the decode path.
+
+[agent_message]: - Added row-capacity guard in `SkGifCodec::haveDecodedRow` to skip swizzling when the swizzler’s offset/width would overrun the destination row bytes, preventing the reported write past the buffer end. (src/codec/SkGifCodec.cpp:474-541)
+- Reused the validated swizzle width for blending to keep width checks consistent with the actual writes. (src/codec/SkGifCodec.cpp:474-541)
+
+Tests not run (not requested).
+Codex finished with return code 0 in 1078.17 seconds.

@@ -1,0 +1,48 @@
+Reading 201 bytes from /tmp/poc
+In archive /tmp/libfuzzer.7:
+/tmp/libfuzzer.7: Йз0057ойкл0024: file format is ambiguous
+/tmp/libfuzzer.7: Matching formats: a.out-i386 a.out-i386-bsd a.out-i386-lynx a.out-pc532-mach
+=================================================================
+==7==ERROR: AddressSanitizer: attempting double-free on 0x621000014100 in thread T0:
+SCARINESS: 42 (double-free)
+    #0 0x49d6f2 in free /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:111:3
+    #1 0x4dccbd in fuzz_display_object_bfd /src/binutils-gdb/binutils/./ada_objdump.h:95:7
+    #2 0x4dd072 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:180:14
+    #3 0x4dd1a0 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:161:13
+    #4 0x4dd8fe in fuzz_display_file /src/binutils-gdb/binutils/./ada_objdump.h:203:12
+    #5 0x4dd8fe in fuzz_preconditions /src/binutils-gdb/binutils/./ada_objdump.h:225:12
+    #6 0x4dd8fe in LLVMFuzzerTestOneInput /src/binutils-gdb/binutils/fuzz_objdump.c:73:7
+    #7 0x4d733a in ExecuteFilesOnyByOne /src/aflplusplus/utils/aflpp_driver/aflpp_driver.c:234:7
+    #8 0x4d710d in main /src/aflplusplus/utils/aflpp_driver/aflpp_driver.c:318:12
+    #9 0x79eaa392f082 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x24082)
+    #10 0x41e65d in _start (/out/fuzz_objdump_safe+0x41e65d)
+
+DEDUP_TOKEN: free--fuzz_display_object_bfd--fuzz_display_any_bfd
+0x621000014100 is located 0 bytes inside of 4112-byte region [0x621000014100,0x621000015110)
+freed by thread T0 here:
+    #0 0x49d6f2 in free /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:111:3
+    #1 0x5d4273 in list_matching_formats /src/binutils-gdb/binutils/bucomm.c:186:3
+    #2 0x4dcca6 in fuzz_display_object_bfd /src/binutils-gdb/binutils/./ada_objdump.h:94:7
+    #3 0x4dd072 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:180:14
+    #4 0x4dd1a0 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:161:13
+    #5 0x4dd8fe in fuzz_display_file /src/binutils-gdb/binutils/./ada_objdump.h:203:12
+    #6 0x4dd8fe in fuzz_preconditions /src/binutils-gdb/binutils/./ada_objdump.h:225:12
+    #7 0x4dd8fe in LLVMFuzzerTestOneInput /src/binutils-gdb/binutils/fuzz_objdump.c:73:7
+    #8 0x4d733a in ExecuteFilesOnyByOne /src/aflplusplus/utils/aflpp_driver/aflpp_driver.c:234:7
+
+DEDUP_TOKEN: free--list_matching_formats--fuzz_display_object_bfd
+previously allocated by thread T0 here:
+    #0 0x49d95d in __interceptor_malloc /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:129:3
+    #1 0xa8cb5e in bfd_malloc /src/binutils-gdb/bfd/libbfd.c:289:9
+    #2 0xa85a6d in bfd_check_format_matches /src/binutils-gdb/bfd/format.c:259:47
+    #3 0x4dcbbe in fuzz_display_object_bfd /src/binutils-gdb/binutils/./ada_objdump.h:86:7
+    #4 0x4dd072 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:180:14
+    #5 0x4dd1a0 in fuzz_display_any_bfd /src/binutils-gdb/binutils/./ada_objdump.h:161:13
+    #6 0x4dd8fe in fuzz_display_file /src/binutils-gdb/binutils/./ada_objdump.h:203:12
+    #7 0x4dd8fe in fuzz_preconditions /src/binutils-gdb/binutils/./ada_objdump.h:225:12
+    #8 0x4dd8fe in LLVMFuzzerTestOneInput /src/binutils-gdb/binutils/fuzz_objdump.c:73:7
+    #9 0x4d733a in ExecuteFilesOnyByOne /src/aflplusplus/utils/aflpp_driver/aflpp_driver.c:234:7
+
+DEDUP_TOKEN: __interceptor_malloc--bfd_malloc--bfd_check_format_matches
+SUMMARY: AddressSanitizer: double-free /src/llvm-project/compiler-rt/lib/asan/asan_malloc_linux.cpp:111:3 in free
+==7==ABORTING

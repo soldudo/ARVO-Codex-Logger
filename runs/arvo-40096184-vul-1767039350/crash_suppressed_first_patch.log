@@ -1,0 +1,17 @@
+# Manually executing the fuzz target resulted in this crash which was being suprrssed when calling arvo
+=================================================================
+==10546==ERROR: AddressSanitizer: odr-violation (0x7ed7a7be38c0):
+  [1] size=13 'typeinfo name for gl::Object' /src/skia/third_party/externals/swiftshader/src/OpenGL/common/Object.cpp
+  [2] size=13 'typeinfo name for gl::Object' /src/skia/third_party/externals/swiftshader/src/OpenGL/common/Object.cpp
+These globals were registered at these points:
+  [1]:
+    #0 0x6ab3e8 in __asan_register_globals.part.13 /src/llvm/projects/compiler-rt/lib/asan/asan_globals.cc:359
+    #1 0x7ed7a6c0476b  (/out/libGLESv2.so+0x32476b)
+
+  [2]:
+    #0 0x6ab3e8 in __asan_register_globals.part.13 /src/llvm/projects/compiler-rt/lib/asan/asan_globals.cc:359
+    #1 0x7ed7a66b83fb  (/out/libEGL.so+0x243fb)
+
+==10546==HINT: if you don't care about these errors you may set ASAN_OPTIONS=detect_odr_violation=0
+SUMMARY: AddressSanitizer: odr-violation: global 'typeinfo name for gl::Object' at /src/skia/third_party/externals/swiftshader/src/OpenGL/common/Object.cpp
+==10546==ABORTING

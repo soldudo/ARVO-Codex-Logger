@@ -1,0 +1,70 @@
+Reading 432 bytes from tmp/poc
+=================================================================
+==2753730==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000fc0 at pc 0x00000060222d bp 0x7ffe06734400 sp 0x7ffe067343f8
+WRITE of size 1 at 0x602000000fc0 thread T0
+    #0 0x60222c  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x60222c)
+    #1 0x602334  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x602334)
+    #2 0x603341  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x603341)
+    #3 0x5b1926  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x5b1926)
+    #4 0x5b0a56  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x5b0a56)
+    #5 0x5b097c  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x5b097c)
+    #6 0x6405d9  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x6405d9)
+    #7 0x67c0d9  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x67c0d9)
+    #8 0x4e88bf  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4e88bf)
+    #9 0x4ccf82  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4ccf82)
+    #10 0x4cd89e  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4cd89e)
+    #11 0x76ae3a62a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9)
+    #12 0x76ae3a62a28a  (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a)
+    #13 0x41e5b8  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x41e5b8)
+
+0x602000000fc0 is located 0 bytes to the right of 16-byte region [0x602000000fb0,0x602000000fc0)
+allocated by thread T0 here:
+    #0 0x499acd  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x499acd)
+    #1 0x4cc72b  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4cc72b)
+    #2 0x4d16be  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4d16be)
+    #3 0x698f01  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x698f01)
+    #4 0x68e369  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x68e369)
+    #5 0x68b1cd  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x68b1cd)
+    #6 0x6619ef  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x6619ef)
+    #7 0x65b428  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x65b428)
+    #8 0x4e856d  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4e856d)
+    #9 0x4ccf82  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4ccf82)
+    #10 0x4cd89e  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x4cd89e)
+    #11 0x76ae3a62a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9)
+    #12 0x76ae3a62a28a  (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a)
+    #13 0x41e5b8  (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x41e5b8)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow (/home/ngibson/repos/ARVO-Codex-Logger/arvo-42488087-vul/out/fuzzer-wolfssl-server-randomize+0x60222c) 
+Shadow bytes around the buggy address:
+  0x0c047fff81a0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x0c047fff81b0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x0c047fff81c0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x0c047fff81d0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x0c047fff81e0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+=>0x0c047fff81f0: fa fa 02 fa fa fa 00 00[fa]fa fa fa fa fa fa fa
+  0x0c047fff8200: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c047fff8210: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c047fff8220: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c047fff8230: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c047fff8240: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==2753730==ABORTING

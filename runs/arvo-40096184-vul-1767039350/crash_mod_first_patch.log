@@ -1,0 +1,14 @@
+# The following modified fuzz cmd suppressed the ODR crash to show the patch fixed the original crash
+# ASAN_OPTIONS=detect_odr_violation=0 ./out/android_codec tmp/poc
+======================= INFO =========================
+This binary is built for AFL-fuzz.
+To run the target function on individual input(s) execute this:
+  ./out/android_codec < INPUT_FILE
+or
+  ./out/android_codec INPUT_FILE1 [INPUT_FILE2 ... ]
+To fuzz with afl-fuzz execute this:
+  afl-fuzz [afl-flags] ./out/android_codec [-N]
+afl-fuzz will run N iterations before re-spawning the process (default: 1000)
+======================================================
+Reading 33 bytes from tmp/poc
+Execution successful
