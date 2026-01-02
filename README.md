@@ -2,9 +2,14 @@
 
 **Caroline** is an assistant that dutifully documents automated agentic ARVO vulnerability patching experiments like a "well-trained puppy."
 
-Named after astronomer pioneer Caroline Herschel known for keeping meticulous records of astronomical observations, it orchestrates the entire experiment lifecycle: retrieves vulnerability context, manages Docker containers, executes the AI agent & documents its command executions, reasonings and token usage, gathers experiment artifacts for analysis & reproducability, and evaluates the patch by applying it to a container and re-running the fuzzer and poc.
+Named after astronomer pioneer Caroline Herschel known for keeping meticulous records of astronomical observations, it orchestrates the entire experiment lifecycle and its duties include:
+* Retrieve vulnerability context from ARVO database
+* Manage Docker container CRUD operations and tidy up
+* Invokes AI agents and catalogs session data including execution logs, reasoning and token usage.
+* Collects experiment artifacts for analysis & reproducability.
+* Re-compiles ARVO containers with agent's patched code and records the output from re-fuzzing the poc.
 
-## Key Features
+## Experiment Workflow
 
 * **Automated Experiment Prep**: Fetches project metadata and crash types directly from `arvo.db`, pulls the related ARVO Docker container, generates a fresh crash log, and extracts the source code to the agent's local workspace.
 * **Agent Orchestration**: Runs the Codex agent in `--full-auto` mode with a prompt that includes the actual crash log and file system context.
