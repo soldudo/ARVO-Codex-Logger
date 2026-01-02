@@ -6,12 +6,12 @@ def get_context(id: int) -> tuple:
     conn = sqlite3.connect('arvo.db')
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT project, crash_type FROM arvo WHERE localId = ?', (id,))
+        cursor.execute('SELECT project, crash_type, patch_url FROM arvo WHERE localId = ?', (id,))
         context = cursor.fetchone()
         if context:
             return context
         else:
-            return None, None
+            return None, None, None
     finally:
         cursor.close()
         conn.close()

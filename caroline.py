@@ -10,6 +10,7 @@ from collections import deque
 from pathlib import Path
 from queries import get_context
 from arvo_tools import initial_setup, standby_container, docker_copy
+from commit_files import download_commit_files
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,18 +70,16 @@ def load_config():
         print(f"CRITICAL: JSON file is corrupt or invalid.\nError details: {e}")
         sys.exit(1)
 
-def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
+def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, patch_url: str = None):
     run_timestamp = int(time.time())
-    log_path = Path(__file__).parent / "runs" / container / f"agent-{vuln_id}-{run_timestamp}.log"
+    log_path = Path(__file__).parent / "runs" / container / f"agent-{container}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-
 
     command = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), prompt]
     
     # command_initial = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), prompt]
     # command_retry_last = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), 'resume', '--last', prompt]
     # command_retry_resume_id = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), 'resume', '019b3597-268f-7c90-9a60-fb713ee6104f', prompt]
-
 
     print("using command:", command)
     print(f'Logging to {log_path}\n')
@@ -89,7 +88,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
     duration = 0.0
     return_code = None
     modified_files = []
-
+    modified_files_relative = []
 
     logger.info(f'logging codex run to {log_path}')
 
@@ -99,6 +98,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
             'timestamp_iso': datetime.now().isoformat(),
             'timestamp_unix': start_time,
             'vuln': vuln_id,
+            'patch_url': patch_url,
             'workspace': str(workspace),
             'command': command[:-1],
             'prompt': prompt
@@ -106,7 +106,6 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
 
         log_file.write(json.dumps(meta_start) + '\n')
         log_file.flush()
-
         logger.info(f'Beginning Codex execution for {container}')
 
         process = subprocess.Popen(
@@ -133,7 +132,6 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
                 try:
                     event = json.loads(line)
                     log_entry['data'] = event
-
                     msg_type = event.get('type')
 
                     # Case 1: Command Execution Result
@@ -174,10 +172,10 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
             # get files modified by agent
             try:
                 find_result = subprocess.run([
-                    'find', str(workspace),
+                    'find', str(workspace), # search agent's workspace
                     '-type', 'f',
-                    '-not', '-path', '*/.git/*',
-                    '-newermt', f'@{start_time}',
+                    '-not', '-path', '*/.git/*', # ignore .git files
+                    '-newermt', f'@{start_time}', # files modified since run's start_time
                     '-printf', '%T@ %p\n'
                 ],
                 capture_output=True, text=True, check=False)
@@ -187,7 +185,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
                         logger.info(line)
                         parts = line.split(' ', 1)
                         if len(parts) == 2:
-                            time_str, mod_filepath = parts
+                            time_str, mod_filepath = parts # time_str can be used to verify mod time
                             modified_files.append(mod_filepath)
 
                 print(f'Modified files since start of run: {modified_files}')
@@ -219,13 +217,20 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
             raise e
                 
         finally:
+            for file in modified_files:
+                try:
+                    relative_path = Path(file).relative_to(workspace)
+                    modified_files_relative.append(str(relative_path))
+                except ValueError:
+                    modified_files_relative.append(file)  # fallback to full path if relative fails
+
             meta_end = {
                 'log_type': 'session_end',
                 'timestamp_iso': datetime.now().isoformat(),
                 'timestamp_unix': time.time(),
                 'duration_seconds': duration,
                 'return_code': return_code,
-                'modified_files': modified_files    
+                'modified_files': modified_files_relative    
             }
             log_file.write(json.dumps(meta_end) + '\n')
             log_file.close()
@@ -234,15 +239,17 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path):
     return modified_files
 
 if __name__ == "__main__":
+    patch_url = None
     experiment_params = load_config()
     vuln_id = experiment_params.get('arvo_id')
     initial_prompt = experiment_params.get('initial_prompt')
 
     # Get project and crash type from ARVO.db
     logger.info(f'Fetching context for arvo {vuln_id}')
-    project, crash_type = get_context(vuln_id)
-    logger.info(f"Experiment setup for ARVO ID {vuln_id}: project={project}, crash_type={crash_type}")
-    if project is None or crash_type is None:
+    project, crash_type, patch_url = get_context(vuln_id)
+    logger.info(f"Experiment setup for ARVO ID {vuln_id}: project={project}, crash_type={crash_type}, patch_url={patch_url}")
+    # Does not check for patch url which isn't critical to execution
+    if project is None or crash_type is None: 
         context_error = f"ERROR: Missing context - project is {project} and crash_type is {crash_type} for ID {vuln_id}. Execution aborted."
         logger.error(context_error)
         raise ValueError(context_error)
@@ -269,9 +276,20 @@ if __name__ == "__main__":
 
         # assign list of modified files to var for automated archiving and retrieval of originals
         # extend to calling container's arvo compile and arvo
-        modified_files = conduct_run(vuln_id, container, prompt, workspace)
+        modified_files = conduct_run(vuln_id, container, prompt, workspace, patch_url)
 
         run_path = Path(__file__).parent / 'runs' / container
+
+        # copy crash log to run folder for archiving
+        shutil.copy2(crash_path, run_path)
+
+        # download ground truth from repo commit url
+        try:
+            logger.info(f'Downloading commit files from {patch_url} to {run_path}')
+            download_commit_files(patch_url, run_path)
+        except Exception as e:
+            logger.error(f'Skipping download. Error getting commit files from {patch_url}: {e}')
+
         
         # copy modified files to experiment run folder for archiving
         for mod_file in modified_files:
@@ -314,6 +332,7 @@ if __name__ == "__main__":
 
             logger.info(f'docker copy modified file {mod_filepath} to container at {relative_path}')
             docker_copy(container, str(mod_filepath), str(relative_path), container_source_flag=False)
+
 
         # re-compile
         KEEP_LINES = 20

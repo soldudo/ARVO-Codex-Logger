@@ -128,19 +128,22 @@ def initial_setup(arvo_id: int, fix_flag: str = 'vul'):
     cleanup_container(container)
     return container, log_file
 
-if __name__ == "__main__":
-    setup_logger()
-    container = None
-    log_file = None
-    try:
-        container, log_file = initial_setup(42488087)
-        # container, log_file = load_container(42530547)
-        # exported_tar = export_container(container)
-        # extracted_path = extract_files(exported_tar, container, fix_flag=False)
-        # logging.info(f"Files extracted to {extracted_path}")
+# Running arvo_tools.py as main is currently disabled due to malfunction
+# Code remains for convenience if debug testing is required
 
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
+# if __name__ == "__main__":
+#     setup_logger()
+#     container = None
+#     log_file = None
+#     try:
+#         container, log_file = initial_setup(42488087)
+#         # container, log_file = load_container(42530547)
+#         # exported_tar = export_container(container)
+#         # extracted_path = extract_files(exported_tar, container, fix_flag=False)
+#         # logging.info(f"Files extracted to {extracted_path}")
+
+#     except Exception as e:
+#         logging.error(f"An error occurred: {e}")
     
     # finally:
     #     if container:
