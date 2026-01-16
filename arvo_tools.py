@@ -1,10 +1,11 @@
 from collections import deque
 import logging
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from pathlib import Path
+from queries import get_context
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,20 @@ def initial_setup(arvo_id: int, fix_flag: str = 'vul'):
     cleanup_tar(exported_tar)
     cleanup_container(container)
     return container, log_file, fs_dir
+
+def get_original(arvo_id: int, file_path: str):
+
+    try:
+        cmd = ['docker', 'run', '--rm', f'n132/arvo:{arvo_id}-vul', 'cat', file_path]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        content = result.stdout
+        if result.stderr:
+            logger.warning(f'Error creating container for original file extraction: {result.stderr}')
+        
+        return content
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f'Error reading file from container: {e}')
 
 # Running arvo_tools.py as main is currently disabled due to malfunction
 # Code remains for convenience if debug testing is required

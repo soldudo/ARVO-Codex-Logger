@@ -1,8 +1,1 @@
-{
-    "arvo_id": 419085594,
-    "initial_prompt": true,
-    "crash_log_patch": null,
-    "resume_flag": false,
-    "resume_id": null,
-    "additional_context": null
-}
+{"arvo_id": 419085594, "initial_prompt": false, "source_crash_db": true, "run_id": "arvo-419085594-vul-1767938596", "source_resume_db": true, "crash_log_patch": null, "resume_flag": true, "resume_id": null, "additional_context": "A known correct fix made changes to the file: sapi/fuzzer/fuzzer-sapi.c at line 48"}

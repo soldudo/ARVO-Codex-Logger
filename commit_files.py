@@ -191,7 +191,7 @@ def process_download(api_url, platform, sha, context=None, dest_path="."):
 # # TEST 1: GitHub
 # print("--- Test 1: GitHub ---")
 # download_commit_files("https://github.com/ntop/nDPI/commit/759910ffe524460e9dad31d61ffafae8f5429f35", './dev/gtest')
-download_commit_files('https://github.com/php/php-src/commit/dd3a098a9bf967831e889d2e19e873d09c71c9b9', './runs')
+# download_commit_files('https://github.com/ArtifexSoftware/mupdf/commit/8e5603875e9812e62b361637acd1afaa89a7f778', './runs')
 # setup_logger()
 # print("\n--- Test 2: GitLab (GNOME) ---")
 # # TEST 2: GitLab
