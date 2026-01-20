@@ -1,6 +1,6 @@
-# Caroline: ARVO Agentic Experiment Assistant
+# CARO: Code agent ARVO experiment Orchestration
 
-**Caroline** is an assistant that dutifully documents automated agentic ARVO vulnerability patching experiments like a "well-trained puppy."
+**CARO** is an assistant that dutifully documents automated agentic ARVO vulnerability patching experiments like a "well-trained puppy."
 
 Named after astronomer pioneer Caroline Herschel known for keeping meticulous records of astronomical observations, it orchestrates the entire experiment lifecycle and its duties include:
 * Retrieve vulnerability context from ARVO database

@@ -1,25 +1,21 @@
 import logging
-import subprocess
 import json
 import os
 import shutil
 import sys
-import time
-from datetime import datetime
-from collections import deque
 from pathlib import Path
-from queries import get_context, insert_crash_log, insert_content, update_caro_log
+from queries import get_context, insert_crash_log, insert_content, update_caro_log, get_crash_log, get_resume_id
 from agent_tools import conduct_run
-from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container
+from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container, get_original
 from commit_files import download_commit_files
 from schema import CrashLogType, ContentType
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - [%(name)s] - %(message)s',
     handlers=[
-        logging.FileHandler("caro.log"),
+        logging.FileHandler("caro.log", mode='w'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -87,7 +83,7 @@ if __name__ == "__main__":
 
     # Use experiment_setup.json to indicate if this is an initial prompt
     if initial_prompt:
-        prompt = f'Find and fix the bug in {project} to remove the {crash_type} shown in the log below. Provide the lines of code and file locations changed in this task.'
+        prompt = f'Find and fix the bug in {project} to remove the {crash_type} shown in the log below. Provide the lines of code and file locations changed in this task. '
 
         crash_path = Path(__file__).parent / crash_original
         logger.info(f'Reading crash log from {crash_path}')
@@ -100,10 +96,23 @@ if __name__ == "__main__":
         prompt += f'<crash_log>{crash_log}</crash_log>'
 
         # conduct the experiment
-        modified_files = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=False, patch_url=patch_url)
+        modified_files, modified_files_relative = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=False, patch_url=patch_url)
 
         # send crash_log to run db
         insert_crash_log(container, CrashLogType.ORIGINAL, crash_log)
+
+        # remove the crash log once it's in the db TODO: send it straight to db
+        crash_path.unlink(missing_ok=True)
+
+        # copy original versions of modified files to db
+        for m_file in modified_files_relative:
+            original_file = get_original(vuln_id, m_file)  
+
+            logger.info(f'File: {m_file}')
+            logger.info('Excerpt: \n%s', original_file[:300])
+            insert_content(run_id=container, file_path=m_file, kind=ContentType.ORIGINAL, content=original_file)
+
+        # TODO: depreciate runs folder. keep only db logic
 
         run_path = Path(__file__).parent / 'runs' / container
 
@@ -137,41 +146,48 @@ if __name__ == "__main__":
                     logger.error(f'Error reading ground truth file {gt_file} for database insertion: {e}')
         except Exception as e:
             logger.error(f'Skipping download. Error getting commit files from {patch_url}: {e}')
-        
-        
-
-
 
         # copy modified files to experiment run folder for archiving
         collect_modified_files(modified_files, workspace, run_path, initial_prompt=True)
-        # TODO: add logic saving data to database and csv
 
     # logic for second attempt at patching
     else:
-        prompt = 'Your previous fixes did not remove the crash.'
+        prompt = 'Your previous fixes did not remove the crash. '
         resume_id = experiment_params.get('resume_id', None)
+        source_crash_flag = experiment_params.get('source_crash_db', False)
+        run_id_prev = experiment_params.get('run_id', None)
+        source_resume_id = experiment_params.get('source_resume_db', False)
         crash_log_patch = experiment_params.get('crash_log_patch', None)
         additional_context = experiment_params.get('additional_context', '')
-        if crash_log_patch:
+
+        # if flag true get prev patch crash from db
+        if source_crash_flag and run_id_prev:
+            crash_log = get_crash_log(run_id=run_id_prev, kind=CrashLogType.PATCH)
+            logger.debug(f'Loaded prev patch crash log: {crash_log}')
+            if source_resume_id:
+                resume_id = get_resume_id(run_id=run_id_prev)
+                logger.info(f'Query produced resume_id: {resume_id}')
+
+        elif crash_log_patch:
             crash_path = Path(crash_log_patch)
             if crash_path.exists():
                 logger.debug(f"Reading first attempt's crash log from {crash_path}")
                 try:
                     with open(crash_path, "r", encoding="utf-8", errors="replace") as f:
                         crash_log = f.read()
-                        prompt = 'Your previous fixes did not remove the crash as indicated by this new crash log:'
+                        prompt = 'Your previous fixes did not remove the crash as indicated by this new crash log: '
                         prompt += f'<crash_log>{crash_log}</crash_log>'
                 except FileNotFoundError:
                     logger.error(f"Error: The file {crash_path} was not found.")
         
 
-        prompt += 'The workspace has been reset with the original files.' 
+        prompt += ' The workspace has been reset with the original files. ' 
         if additional_context:
             prompt += additional_context
         # Example second try context: A known correct fix made changes to the following files: src/internal.c around lines 21167 - 21171, 23224, 25164 and 25176; wolfcrypt/src/dh.c near lines 1212, 1244, 1284 and 1289; and wolfcrypt/test/test.c near lines 14644, 14766 and 14812.
-        prompt += 'Use this information to reattempt the fix.'
+        prompt += ' Use this information to reattempt the fix.'
 
-        modified_files = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
+        modified_files, modified_files_relative = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
         run_path = Path(__file__).parent / 'runs' / container
 
         # copy modified files to experiment run folder for archiving
@@ -188,24 +204,21 @@ if __name__ == "__main__":
         standby_container(patch_container, vuln_id)
         logger.debug(f'Standby container {patch_container} started for patch evaluation.')
         logger.debug(f'initial_prompt is {initial_prompt}')
-        if initial_prompt:
-            logger.info('Copying original container files')
-            for mod_file in modified_files:
-                mod_filepath = Path(mod_file)
-                filename = mod_filepath.name
-                # rel_path will be src/{project}/...
-                relative_path = mod_filepath.relative_to(base_to_remove)
-                truncated_path = Path(*relative_path.parts[2:])  # remove 'src' and project folder for container path
-                logger.debug(f'chopping relative path {relative_path} to {truncated_path} for db')
 
-                # insert original file into db
-                with open(mod_filepath, 'r', encoding='utf-8', errors='replace') as f:
-                    content = f.read()
+        # # Removing:
+        # if initial_prompt:
+        #     logger.info('Copying original container files')
+        #     for mod_file in modified_files:
+        #         mod_filepath = Path(mod_file)
+        #         filename = mod_filepath.name
+        #         # rel_path will be src/{project}/...
+        #         relative_path = mod_filepath.relative_to(base_to_remove)
+        #         truncated_path = Path(*relative_path.parts[2:])  # remove 'src' and project folder for container path
+        #         logger.debug(f'chopping relative path {relative_path} to {truncated_path} for db')
 
-                    insert_content(run_id=container, file_path=str(truncated_path), kind=ContentType.ORIGINAL, content=content)
-
-                logger.debug(f'docker copy original file {relative_path} to {run_path}/{filename}-original')
-                docker_copy(patch_container, str(relative_path), run_path, container_source_flag=True)
+                # # Removing:
+                # logger.debug(f'docker copy original file {relative_path} to {run_path}/{filename}-original')
+                # docker_copy(patch_container, str(relative_path), run_path, container_source_flag=True)
 
     except Exception as e:
         logger.error(f'Error docker copying original files: {e}')
@@ -237,12 +250,13 @@ if __name__ == "__main__":
 
     insert_crash_log(run_id=container, kind=CrashLogType.PATCH, crash_log=fuzz_result.stderr)
     
-    crash_log_path = f'runs/crash_log_{patch_container}.log'
-    # crash_log_path = run_path / 'crash_first_patch.log'
-    logger.debug(f'Writing first patch crash log to {crash_log_path}')
-    logger.info(f'arvo (re-run poc) stderr:\n{fuzz_result.stderr}')
-    with open(crash_log_path, 'w', encoding='utf-8', errors='replace') as f:
-        f.write(fuzz_result.stderr)
+    # REMOVED crash_log file in favor of db storage
+    # crash_log_path = f'runs/crash_log_{patch_container}.log'
+    # # crash_log_path = run_path / 'crash_first_patch.log'
+    # logger.debug(f'Writing first patch crash log to {crash_log_path}')
+    # logger.info(f'arvo (re-run poc) stderr:\n{fuzz_result.stderr}')
+    # with open(crash_log_path, 'w', encoding='utf-8', errors='replace') as f:
+    #     f.write(fuzz_result.stderr)
 
     logger.debug(f'removing patch container {patch_container}')
     cleanup_container(patch_container)
@@ -250,6 +264,8 @@ if __name__ == "__main__":
     if fs_path.exists() and fs_path.is_dir():
         logger.debug(f'removing extracted filesystem at {fs_path}')
         shutil.rmtree(fs_path, ignore_errors=True)
+
+    shutil.rmtree(run_path, ignore_errors=True)
 
     logger.info('######### CARO Experiment Run Complete #########')
 

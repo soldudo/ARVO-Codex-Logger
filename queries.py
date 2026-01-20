@@ -1,11 +1,17 @@
 import sqlite3
 import logging
-
+from typing import Optional
 from schema import ContentType, CrashLogType, RunRecord
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = 'arvo_experiments.db'
+
+def _get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
 # WARNING: 
     # ARVO's crash output field is sometimes truncated ie 42513136
     # Recommend manually fuzzing using command: arvo
@@ -23,6 +29,7 @@ def get_context(id: int) -> tuple:
         cursor.close()
         conn.close()
 
+# TODO: change init to include on delete cascade
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
@@ -122,6 +129,7 @@ def insert_content(run_id:str, file_path:str, kind: ContentType, content: str):
         raise ValueError(f"Invalid content type: {kind}")
     
     try:
+        logger.info(f'Updating... \nrun: {run_id}\npath: {file_path}')
         query = f'''
             UPDATE implicated_files
             SET {target_col} = ?
@@ -173,6 +181,55 @@ def insert_crash_log(run_id: str, kind: CrashLogType, crash_log: str):
     finally:
         cursor.close()
         conn.close()
+
+def get_crash_log(run_id: str, kind: CrashLogType = CrashLogType.PATCH, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    col_map = {
+        CrashLogType.ORIGINAL: "crash_log_original",
+        CrashLogType.PATCH: "crash_log_patch"
+    }
+    target_col = col_map.get(kind)
+    if not target_col:
+        logger.error(f"Invalid crash log type: {kind}")
+        raise ValueError(f"Invalid crash log type: {kind}")
+
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        cursor = conn.execute(f'SELECT {target_col} FROM runs WHERE run_id = ?', (run_id,))
+        row = cursor.fetchone()
+        if row is None:
+            logger.warning(f'WARNING: No run found with id: {run_id}')
+            return None
+        return row[0]
+    except sqlite3.Error as e:
+        logger.error(f'db error retrieving {target_col} for {run_id}')
+        return None
+    finally:
+        if should_close:
+            conn.close()
+
+def get_resume_id(run_id: str, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        cursor = conn.execute(f'SELECT resume_id FROM runs WHERE run_id = ?', (run_id,))
+        row = cursor.fetchone()
+        if row is None:
+            logger.warning(f'WARNING: No run found with id: {run_id}')
+            return None
+        return row[0]
+    except sqlite3.Error as e:
+        logger.error(f'db error retrieving resume_id for {run_id}')
+        return None
+    finally:
+        if should_close:
+            conn.close()
+
+    
 
 def update_agent_log(run_id: str, agent_log_path: str):
     conn = sqlite3.connect(DB_PATH)
@@ -236,24 +293,68 @@ def update_caro_log(run_id: str, caro_log_path: str):
         cursor.close()
         conn.close()
 
-def update_crash_resolved(run_id: str, resolved: bool):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    cursor = conn.cursor()
-    
+def update_crash_resolved(run_id: str, resolved: bool, conn: Optional[sqlite3.Connection] = None):
+    # 1. Determine if we own the connection (and thus should close it)
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
     try:
-        cursor.execute('''
-            UPDATE runs
-            SET crash_resolved = ?
-            WHERE run_id = ?
-        ''', (resolved, run_id))
-
-        if cursor.rowcount == 0:
-            logger.error(f"Warning: No run found with ID {run_id}. Crash resolved status not updated.")
-        else:
-            logger.info(f"Updated crash_resolved for run {run_id} to {resolved}")
-
-        conn.commit()
+        with conn:
+            cursor = conn.execute('''
+                UPDATE runs
+                SET crash_resolved = ?
+                WHERE run_id = ?
+            ''', (resolved, run_id))
+            if cursor.rowcount == 0:
+                logger.error(f"Warning: No run found with ID {run_id}. Crash resolved status not updated.")
+            else:
+                logger.info(f"Updated crash_resolved for run {run_id} to {resolved}")
+    except sqlite3.Error as e:
+        logging.error(f"Database error updating run {run_id}: {e}")
+        # Note: 'with conn' automatically rolled back changes if an error occurred inside it.
+        
     finally:
-        cursor.close()
-        conn.close()
+        # 3. Only close the connection if we created it locally
+        if should_close:
+            conn.close()
+
+def remove_run(run_id: str, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+
+    try:
+        with conn:
+            conn.execute('DELETE FROM implicated_files WHERE run_id = ?', (run_id,))
+            conn.execute('DELETE FROM runs WHERE run_id = ?', (run_id,))
+            logging.info(f'Successfully deleted {run_id} from db.')
+    
+    except sqlite3.Error as e:
+        logging.error(f'Error during {run_id} deletion: {e}')
+    
+    finally:
+        if should_close:
+            conn.close()
+
+if __name__ == "__main__":
+    experiment_run = 'arvo-40096184-vul-1767674103'
+    remove_run(experiment_run)
+
+
+    # with open('./crash_log_patch.log', 'r', encoding='utf-8') as f:
+    #     crash_log = f.read()
+    # insert_crash_log(experiment_run, CrashLogType.PATCH, crash_log)
+    # update_crash_resolved(experiment_run, True)
+    # with open('./crash_log_original.log', 'r', encoding='utf-8') as f:
+    #     crash_log = f.read()
+    # insert_crash_log(experiment_run, CrashLogType.ORIGINAL, crash_log)
+
+    # conn = sqlite3.connect(DB_PATH)
+    # cursor = conn.cursor()
+    # cursor.execute('DELETE FROM implicated_files where run_id = ?', (experiment_run,))
+
+    # conn.commit()
+    # cursor.close()
+    # conn.close()

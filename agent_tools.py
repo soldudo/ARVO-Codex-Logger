@@ -263,4 +263,4 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
             record_run(run_data)
             logger.info(f'Recorded run in database with ID {container}')
     
-    return modified_files
+    return modified_files, modified_files_relative
