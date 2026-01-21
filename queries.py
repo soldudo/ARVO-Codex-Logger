@@ -64,14 +64,22 @@ def init_db():
         ''')
 
         # Table for File Changes (One-to-Many relationship with runs)
-        cursor.execute('''CREATE TABLE IF NOT EXISTS implicated_files (
+        cursor.execute('''CREATE TABLE IF NOT EXISTS run_files (
             file_id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT,
             file_path TEXT,
-            original_content TEXT,
             patched_content TEXT,
-            ground_truth_content TEXT,
+            original_file_id INTEGER,
             FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS original_files (
+            original_file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vuln_id INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            original_content TEXT,
+            ground_truth_content TEXT,
+            FOREIGN KEY (vuln_id) REFERENCES arvo(localId)
+            UNIQUE(vuln_id, file_path)
         )''')
         conn.commit()
     finally:
@@ -100,9 +108,33 @@ def record_run(run_data: RunRecord):
         ))
         for filepath in run_data.modified_files_relative:
             cursor.execute('''
-                INSERT INTO implicated_files (run_id, file_path)
+                INSERT INTO run_files (run_id, file_path)
                 VALUES (?, ?)
             ''', (run_data.run_id, filepath))
+            cursor.execute('''
+                INSERT OR IGNORE INTO original_files (vuln_id, file_path)
+                VALUES (?, ?)
+            ''', (run_data.vuln_id, filepath))
+            #
+            cursor.execute("""
+                SELECT original_file_id FROM original_files 
+                WHERE vuln_id = ? AND file_path = ?
+            """, (run_data.vuln_id, filepath))
+    
+            result = cursor.fetchone()
+            if not result:
+                logger.error(f'Error: Could not retrieve original_file_id')
+            original_file_id = result[0]
+
+            # Step 4: Link the run to this original file
+            cursor.execute("""
+                UPDATE run_files
+                SET original_file_id = ?
+                WHERE run_id = ? AND file_path = ?
+            """, (original_file_id, run_data.run_id, filepath))
+            
+            if cursor.rowcount == 0:
+                logger.warning(f"Could not link original file. No entry in run_files for {filepath}")
 
         conn.commit()
     except sqlite3.IntegrityError as e:
@@ -112,40 +144,38 @@ def record_run(run_data: RunRecord):
         cursor.close()
         conn.close()
 
-def insert_content(run_id:str, file_path:str, kind: ContentType, content: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    cursor = conn.cursor()
+# This has been separated into three functions and updated to new db schema
+# def insert_content(run_id:str, file_path:str, kind: ContentType, content: str):
+#     conn = sqlite3.connect(DB_PATH)
+#     conn.execute("PRAGMA foreign_keys = ON")
 
-    col_map = {
-        ContentType.ORIGINAL: "original_content",
-        ContentType.PATCHED: "patched_content",
-        ContentType.GROUND_TRUTH: "ground_truth_content"
-    }
+#     try:
+#         if kind == ContentType.PATCHED:
+#             _update_patched_
 
-    target_col = col_map.get(kind)
-    if not target_col:
-        logger.error(f"Invalid content type: {kind}")
-        raise ValueError(f"Invalid content type: {kind}")
+
+#     if not target_col:
+#         logger.error(f"Invalid content type: {kind}")
+#         raise ValueError(f"Invalid content type: {kind}")
     
-    try:
-        logger.info(f'Updating... \nrun: {run_id}\npath: {file_path}')
-        query = f'''
-            UPDATE implicated_files
-            SET {target_col} = ?
-            WHERE run_id = ? AND file_path = ?
-        '''
-        cursor.execute(query, (content, run_id, file_path))
+#     try:
+#         logger.info(f'Updating... \nrun: {run_id}\npath: {file_path}')
+#         query = f'''
+#             UPDATE run_files
+#             SET {target_col} = ?
+#             WHERE run_id = ? AND file_path = ?
+#         '''
+#         cursor.execute(query, (content, run_id, file_path))
 
-        if cursor.rowcount == 0:
-            logger.error(f"Warning: No record found for {file_path} in run {run_id}. Content not saved.")
-        else:
-            logger.info(f"Updated {target_col} for {file_path}")
+#         if cursor.rowcount == 0:
+#             logger.error(f"Warning: No record found for {file_path} in run {run_id}. Content not saved.")
+#         else:
+#             logger.info(f"Updated {target_col} for {file_path}")
 
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+#         conn.commit()
+#     finally:
+#         cursor.close()
+#         conn.close()
 
 def insert_crash_log(run_id: str, kind: CrashLogType, crash_log: str):
     conn = sqlite3.connect(DB_PATH)
@@ -229,7 +259,24 @@ def get_resume_id(run_id: str, conn: Optional[sqlite3.Connection] = None):
         if should_close:
             conn.close()
 
-    
+def get_agent_log(run_id: str):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        cursor = conn.execute('SELECT agent_log FROM runs WHERE run_id = ?', (run_id,))
+        row = cursor.fetchone()
+        if row is None:
+            logger.warning(f'WARNING: No run found with id: {run_id}')
+            return None
+        return row[0]
+    except sqlite3.Error as e:
+        logger.error(f'db error retrieving resume_id for {run_id}')
+        return None
+    finally:
+        if should_close:
+            conn.close()
 
 def update_agent_log(run_id: str, agent_log_path: str):
     conn = sqlite3.connect(DB_PATH)
@@ -319,6 +366,100 @@ def update_crash_resolved(run_id: str, resolved: bool, conn: Optional[sqlite3.Co
         if should_close:
             conn.close()
 
+def update_patch(run_id: int, file_path: str, content: str, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        with conn:
+            cursor = conn.execute('''
+                UPDATE run_files
+                SET patched_content = ?
+                WHERE run_id = ? AND file_path = ?
+            ''', (content, run_id, file_path))
+            if cursor.rowcount == 0:
+                logger.error(f"Warning: No record found for {file_path} in run {run_id}. Content not saved.")
+            else:
+                logger.info(f"Updated run {run_id} patched file: {file_path}")
+    except sqlite3.Error as e:
+        logging.error(f"Database error updating run_id {run_id} patched file: {file_path}: {e}")
+        
+    finally:
+        if should_close:
+            conn.close()
+
+def update_original(vuln_id: int, file_path: str, content: str, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        query = '''
+                UPDATE original_files
+                SET original_content = ?
+                WHERE vuln_id = ? AND file_path = ? AND original_content IS NULL
+            '''
+        if should_close:
+            with conn:
+                cursor = conn.execute(query, (content, vuln_id, file_path))
+        else:
+            cursor = conn.execute(query, (content, vuln_id, file_path))
+
+        if cursor.rowcount > 0:
+            logger.info(f"Updated vulnerability {vuln_id} original file: {file_path}")
+        else:
+            check_cur = conn.execute(
+                "SELECT 1 FROM original_files WHERE vuln_id = ? AND file_path = ?",
+            )
+            if check_cur.fetchone():
+                logger.info(f"Skipped update: {file_path} (Vuln {vuln_id}) already has content.")
+            else:
+                logger.warning(f"Warning: Row missing for {file_path} (Vuln {vuln_id}). Cannot update.")
+                
+    except sqlite3.Error as e:
+        logging.error(f"Database error updating vuln {vuln_id} original file: {file_path}: {e}")
+        
+    finally:
+        if should_close:
+            conn.close()
+
+def update_ground_truth(vuln_id: int, file_path: str, content: str, conn: Optional[sqlite3.Connection] = None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        query = '''
+                UPDATE original_files
+                SET ground_truth_content = ?
+                WHERE vuln_id = ? AND file_path = ? AND ground_truth_content IS NULL
+            '''
+        if should_close:
+            with conn:
+                cursor = conn.execute(query, (content, vuln_id, file_path))
+        else:
+            cursor = conn.execute(query, (content, vuln_id, file_path))
+        
+        if cursor.rowcount > 0:
+            logger.info(f"Updated vulnerability {vuln_id} ground_truth file: {file_path}")
+        else:
+            check_cur = conn.execute(
+                "SELECT 1 FROM original_files WHERE vuln_id = ? AND file_path = ?",
+            )
+            if check_cur.fetchone():
+                logger.info(f"Skipped update: {file_path} (Vuln {vuln_id}) already has content.")
+            else:
+                logger.warning(f"Warning: Row missing for {file_path} (Vuln {vuln_id}). Cannot update.")
+
+           
+    except sqlite3.Error as e:
+        logging.error(f"Database error updating vuln {vuln_id} ground_truth file: {file_path}: {e}")
+        
+    finally:
+        if should_close:
+            conn.close()
+
 def remove_run(run_id: str, conn: Optional[sqlite3.Connection] = None):
     should_close = False
     if conn is None:
@@ -338,9 +479,10 @@ def remove_run(run_id: str, conn: Optional[sqlite3.Connection] = None):
         if should_close:
             conn.close()
 
-if __name__ == "__main__":
-    experiment_run = 'arvo-40096184-vul-1767674103'
-    remove_run(experiment_run)
+# if __name__ == "__main__":
+
+    # experiment_run = 'arvo-40096184-vul-1767674103'
+    # remove_run(experiment_run)
 
 
     # with open('./crash_log_patch.log', 'r', encoding='utf-8') as f:

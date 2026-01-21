@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from queries import get_context, insert_crash_log, insert_content, update_caro_log, get_crash_log, get_resume_id
+from queries import get_context, insert_crash_log, update_caro_log, get_crash_log, get_resume_id, update_patch, update_original, update_ground_truth
 from agent_tools import conduct_run
 from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container, get_original
 from commit_files import download_commit_files
@@ -12,7 +12,7 @@ from schema import CrashLogType, ContentType
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - [%(name)s] - %(message)s',
     handlers=[
         logging.FileHandler("caro.log", mode='w'),
@@ -106,11 +106,18 @@ if __name__ == "__main__":
 
         # copy original versions of modified files to db
         for m_file in modified_files_relative:
-            original_file = get_original(vuln_id, m_file)  
+            original_file = get_original(vuln_id, project, m_file)  
+
+            if original_file is None:
+                logger.info(f'{m_file} not found in container, skipping..')
+                continue
 
             logger.info(f'File: {m_file}')
-            logger.info('Excerpt: \n%s', original_file[:300])
-            insert_content(run_id=container, file_path=m_file, kind=ContentType.ORIGINAL, content=original_file)
+            logger.debug('Excerpt: \n%s', original_file[:300])
+            update_original(vuln_id=vuln_id, file_path=m_file, content=original_file)
+            
+            # TODO: remove once changeover tested
+            # insert_content(run_id=container, file_path=m_file, kind=ContentType.ORIGINAL, content=original_file)
 
         # TODO: depreciate runs folder. keep only db logic
 
@@ -138,7 +145,10 @@ if __name__ == "__main__":
 
                     with open(gt_file, 'r', encoding='utf-8', errors='replace') as f:
                         content = f.read()
-                        insert_content(run_id=container, file_path=str(truncated_gt_path), kind=ContentType.GROUND_TRUTH, content=content)
+                        update_ground_truth(vuln_id=vuln_id, file_path=str(truncated_gt_path), content=content)
+                        
+                        # TODO: Remove once verified
+                        # insert_content(run_id=container, file_path=str(truncated_gt_path), kind=ContentType.GROUND_TRUTH, content=content)
                 except ValueError:
                     logger.error(f'Path error: GT file at {gt_path} is not inside {run_path}')
 
@@ -153,6 +163,7 @@ if __name__ == "__main__":
     # logic for second attempt at patching
     else:
         prompt = 'Your previous fixes did not remove the crash. '
+        # load experiment settings from json
         resume_id = experiment_params.get('resume_id', None)
         source_crash_flag = experiment_params.get('source_crash_db', False)
         run_id_prev = experiment_params.get('run_id', None)
@@ -168,6 +179,7 @@ if __name__ == "__main__":
                 resume_id = get_resume_id(run_id=run_id_prev)
                 logger.info(f'Query produced resume_id: {resume_id}')
 
+        # fallback on loading crash from file
         elif crash_log_patch:
             crash_path = Path(crash_log_patch)
             if crash_path.exists():
@@ -187,6 +199,7 @@ if __name__ == "__main__":
         # Example second try context: A known correct fix made changes to the following files: src/internal.c around lines 21167 - 21171, 23224, 25164 and 25176; wolfcrypt/src/dh.c near lines 1212, 1244, 1284 and 1289; and wolfcrypt/test/test.c near lines 14644, 14766 and 14812.
         prompt += ' Use this information to reattempt the fix.'
 
+        # get list of files modified since start of run. relative paths used for navigating container and db
         modified_files, modified_files_relative = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
         run_path = Path(__file__).parent / 'runs' / container
 
@@ -234,8 +247,10 @@ if __name__ == "__main__":
         # insert patched file into db
         with open(mod_filepath, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
+            update_patch(run_id=container, file_path=str(truncated_path), content=content)
 
-            insert_content(run_id=container, file_path=str(truncated_path), kind=ContentType.PATCHED, content=content)
+            # TODO: once changeover verified
+            # insert_content(run_id=container, file_path=str(truncated_path), kind=ContentType.PATCHED, content=content)
 
         logger.debug(f'docker copy modified file {mod_filepath} to container at {relative_path}')
         docker_copy(patch_container, str(mod_filepath), str(relative_path), container_source_flag=False)

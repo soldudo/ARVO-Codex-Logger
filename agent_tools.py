@@ -165,16 +165,24 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
                     '-printf', '%T@ %p\n'
                 ],
                 capture_output=True, text=True, check=False)
+
                 if find_result.stdout:
-                    logger.info("Files modified by agent:")
-                    for line in find_result.stdout.splitlines():
+                    result_filelist = find_result.stdout.splitlines()
+                    # If numerous modified files found, only keep selection from end 
+                    # Agents may build tools to aid investigation leading to many non-patch files
+                    MODIFIED_FILES_MAX = 42
+                    if len(result_filelist) > MODIFIED_FILES_MAX:
+                        result_filelist = result_filelist[-MODIFIED_FILES_MAX:]
+
+                        
+                    logger.info(f"Found {len(result_filelist)} files modified by agent: ")
+                    for line in result_filelist:
                         logger.info(line)
                         parts = line.split(' ', 1)
                         if len(parts) == 2:
                             time_str, mod_filepath = parts # time_str can be used to verify mod time
                             modified_files.append(mod_filepath)
 
-                logger.info(f'Modified files since start of run: {modified_files}')
             except Exception as e:
                 logger.error(f'Error finding modified files: {e}')
 

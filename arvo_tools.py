@@ -22,7 +22,7 @@ def setup_logger():
 
 def run_command(cmd, check=True, stdout=None, stderr=subprocess.PIPE, timeout=None):
     try:
-        logger.info(f'Executing: {" ".join(cmd)}')
+        logger.debug(f'Executing: {" ".join(cmd)}')
         result = subprocess.run(
             cmd,
             stdout=stdout,
@@ -49,7 +49,7 @@ def make_fs(container_name: str):
 def load_container(arvo_id: int, fix_flag: str = 'vul'):
     # pull container first for concise crash_log
     pull_call = ['docker', 'pull', f'n132/arvo:{arvo_id}-{fix_flag}']
-    logger.info(f"Pulling image n132/arvo:{arvo_id}-{fix_flag}")
+    logger.debug(f"Pulling image n132/arvo:{arvo_id}-{fix_flag}")
     run_command(pull_call)
 
     container_name = f'arvo-{arvo_id}-{fix_flag}-{int(time.time())}'
@@ -68,7 +68,7 @@ def load_container(arvo_id: int, fix_flag: str = 'vul'):
 def export_container(container_name, fs_dir):
     output_tar = f'{container_name}.tar'
     output_path = os.path.join(fs_dir, output_tar)
-    logger.info(f"Exporting container {container_name} tar to {output_path}")
+    logger.debug(f"Exporting container {container_name} tar to {output_path}")
     cmd = ['docker', 'export', container_name, '-o', output_path]
     run_command(cmd)
 
@@ -79,7 +79,7 @@ def export_container(container_name, fs_dir):
     return output_path
 
 def extract_files(container_tar: str, fs_dir):
-    logger.info(f"Extracting {container_tar} to {fs_dir}")
+    logger.debug(f"Extracting {container_tar} to {fs_dir}")
     
     cmd = ['tar', '-xf', container_tar, '-C', fs_dir]
     result = run_command(cmd, check=False)
@@ -94,13 +94,13 @@ def extract_files(container_tar: str, fs_dir):
 
 def cleanup_tar(tar_path: str):
     if os.path.exists(tar_path):
-        logger.info(f"Removing tar file {tar_path}")
+        logger.debug(f"Removing tar file {tar_path}")
         os.remove(tar_path)
     else:
         logger.warning(f"Tar file {tar_path} does not exist for cleanup")
 
 def cleanup_container(container_name: str):
-    logger.info(f"Cleaning up container {container_name}")
+    logger.debug(f"Cleaning up container {container_name}")
     cmd = ['docker', 'rm', '-f', container_name]
     run_command(cmd, check=False)
 
@@ -111,7 +111,7 @@ def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
                  f'n132/arvo:{vuln_id}-{fix_flag}',
                  '-f', '/dev/null'
     ]
-    logger.info(f"Starting standby container {container_name}")
+    logger.debug(f"Starting standby container {container_name}")
     run_command(stby_cmd)
 
 def recompile_container(container_name: str):
@@ -127,6 +127,8 @@ def recompile_container(container_name: str):
                 last_lines.append(line)
         
         compile_log = ''.join(last_lines)
+
+        # TODO: recompiling failure can still prodoce this successful recomiplation msg
         if proc.returncode == 0:
             logger.info(f'Container {container_name} re-compiled successfully.\n'
                         
@@ -176,19 +178,24 @@ def initial_setup(arvo_id: int, fix_flag: str = 'vul'):
     cleanup_container(container)
     return container, log_file, fs_dir
 
-def get_original(arvo_id: int, file_path: str):
+def get_original(arvo_id: int, project:str, file_path: str):
+    image = f'n132/arvo:{arvo_id}-vul'
+    
+    def run_cat(target_path):
+        cmd = ['docker', 'run', '--rm', image, 'cat', target_path]
+        return subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     try:
-        cmd = ['docker', 'run', '--rm', f'n132/arvo:{arvo_id}-vul', 'cat', file_path]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        content = result.stdout
-        if result.stderr:
-            logger.warning(f'Error creating container for original file extraction: {result.stderr}')
-        
-        return content
+        return run_cat(file_path).stdout
 
-    except subprocess.CalledProcessError as e:
-        logger.error(f'Error reading file from container: {e}')
+    except subprocess.CalledProcessError:
+        project_path = str(Path(project) / file_path)
+        logger.info(f'File not found at relative path, prepending project directory: {project_path}')
+        try:
+            return run_cat(project_path).stdout
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Error reading file from container: {e}')
+            return None
 
 # Running arvo_tools.py as main is currently disabled due to malfunction
 # Code remains for convenience if debug testing is required
