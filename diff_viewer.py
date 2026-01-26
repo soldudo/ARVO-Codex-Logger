@@ -163,7 +163,7 @@ class PatchAnalyzer:
                         "removed" if line.startswith('-') else None
                     self.text_area.insert(tk.END, line + "\n", tag)
             else:
-                self.text_area.insert(tk.END, 'Content not found for this selection.')
+                self.text_area.insert(tk.END, 'Content not found for this file.')
         except sqlite3.Error as e:
             self.text_area.delete(1.0, tk.END)
             self.text_area.insert(tk.END, f'Database Error: {e}')
