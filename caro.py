@@ -4,9 +4,10 @@ import os
 import shutil
 import sys
 from pathlib import Path
+import time
 from queries import get_context, insert_crash_log, update_caro_log, get_crash_log, get_resume_id, update_patch, update_original, update_ground_truth
 from agent_tools import conduct_run
-from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container, get_original
+from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container, get_original, get_container_cat
 from commit_files import download_commit_files
 from schema import CrashLogType, ContentType
 
@@ -15,7 +16,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [%(name)s] - %(message)s',
     handlers=[
-        logging.FileHandler("caro.log", mode='w'),
+        logging.FileHandler("caro.log", mode='a'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -64,9 +65,13 @@ if __name__ == "__main__":
     logger.info('######### Starting CARO Experiment Run #########')
     experiment_params = load_config()
     vuln_id = experiment_params.get('arvo_id')
+    container_name = experiment_params.get('container_name')
     initial_prompt = experiment_params.get('initial_prompt') # flag
     agent = experiment_params.get('agent', 'codex')
     resume_flag = experiment_params.get('resume_flag', False) 
+    
+    # Defining the run name (previously container) using arvo-vuln_id-vuln_flag-timestamp
+    run_id = f'arvo-{vuln_id}-vul{int(time.time())}'
 
     # Get project and crash type from ARVO.db
     project, crash_type, patch_url = get_context(vuln_id)
@@ -76,36 +81,22 @@ if __name__ == "__main__":
         context_error = f"ERROR: Missing context - project is {project} and crash_type is {crash_type} for ID {vuln_id}. Execution aborted."
         logger.error(context_error)
         raise ValueError(context_error)
-    
-    logger.info(f'Generating original arvo crash log and extracting filesystem.')
-    container, crash_original, fs_dir = initial_setup(vuln_id)
-    workspace = Path(fs_dir) / 'src' / project
 
     # Use experiment_setup.json to indicate if this is an initial prompt
     if initial_prompt:
-        prompt = f'Find and fix the bug in {project} to remove the {crash_type} shown in the log below. Provide the lines of code and file locations changed in this task. '
-
-        crash_path = Path(__file__).parent / crash_original
-        logger.info(f'Reading crash log from {crash_path}')
-        try:
-            with open(crash_path, "r", encoding="utf-8", errors="replace") as f:
-                crash_log = f.read()
-        except FileNotFoundError:
-            logger.error(f"Error: The file {crash_path} was not found.")
-
-        prompt += f'<crash_log>{crash_log}</crash_log>'
+        prompt = f'Find and fix the bug in {project} to remove the {crash_type} shown in the crash.log file. Provide the lines of code and file locations changed in this task. '
 
         # conduct the experiment
-        modified_files, modified_files_relative = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=False, patch_url=patch_url)
-
-        # send crash_log to run db
-        insert_crash_log(container, CrashLogType.ORIGINAL, crash_log)
-
-        # remove the crash log once it's in the db TODO: send it straight to db
-        crash_path.unlink(missing_ok=True)
+        modified_files = conduct_run(vuln_id=vuln_id, run_id=run_id, container_name=container_name, prompt=prompt, agent=agent, resume_flag=False, patch_url=patch_url)
 
         # copy original versions of modified files to db
-        for m_file in modified_files_relative:
+        for m_file in modified_files:
+            logger.info(f'Getting cat for m_file: {m_file}')
+            content = get_container_cat(container_name, m_file)
+            # update db with patch content
+            logger.info(f'updating {run_id}\nfile {m_file}')
+            update_patch(run_id=run_id, file_path=str(m_file), content=content)
+
             original_file = get_original(vuln_id, project, m_file)  
 
             if original_file is None:
@@ -116,18 +107,7 @@ if __name__ == "__main__":
             logger.debug('Excerpt: \n%s', original_file[:300])
             update_original(vuln_id=vuln_id, file_path=m_file, content=original_file)
             
-            # TODO: remove once changeover tested
-            # insert_content(run_id=container, file_path=m_file, kind=ContentType.ORIGINAL, content=original_file)
-
-        # TODO: depreciate runs folder. keep only db logic
-
-        run_path = Path(__file__).parent / 'runs' / container
-
-        # move crash log to run folder for archiving
-        try:
-            shutil.move(crash_path, run_path)
-        except Exception as e:
-            logger.error(f'Error moving crash log to run folder. Move manually or regenerate: {e}')
+        run_path = Path(__file__).parent / 'runs' / run_id
 
         # download ground truth from repo commit url
         try:
@@ -139,16 +119,14 @@ if __name__ == "__main__":
 
                 try:         
                     relative_path = gt_path.relative_to(run_path)
-                    logger.debug(f'relative_path_str: {relative_path}')
+                    logger.info(f'relative_path_str: {relative_path}')
                     truncated_gt_path = Path(*relative_path.parts[1:])  # remove 'grndtrth' folder for db path
-                    logger.debug(f'truncated_gt_path for db: {truncated_gt_path}')
+                    logger.info(f'truncated_gt_path for db: {truncated_gt_path}')
 
                     with open(gt_file, 'r', encoding='utf-8', errors='replace') as f:
                         content = f.read()
                         update_ground_truth(vuln_id=vuln_id, file_path=str(truncated_gt_path), content=content)
                         
-                        # TODO: Remove once verified
-                        # insert_content(run_id=container, file_path=str(truncated_gt_path), kind=ContentType.GROUND_TRUTH, content=content)
                 except ValueError:
                     logger.error(f'Path error: GT file at {gt_path} is not inside {run_path}')
 
@@ -157,9 +135,8 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f'Skipping download. Error getting commit files from {patch_url}: {e}')
 
-        # copy modified files to experiment run folder for archiving
-        collect_modified_files(modified_files, workspace, run_path, initial_prompt=True)
-
+    # TODO: Still needs updated container implementation to match first try run
+    # DO NOT RUN SECOND ATTEMPTS UNTIL THIS IS FIXED!
     # logic for second attempt at patching
     else:
         prompt = 'Your previous fixes did not remove the crash. '
@@ -192,7 +169,6 @@ if __name__ == "__main__":
                 except FileNotFoundError:
                     logger.error(f"Error: The file {crash_path} was not found.")
         
-
         prompt += ' The workspace has been reset with the original files. ' 
         if additional_context:
             prompt += additional_context
@@ -200,87 +176,26 @@ if __name__ == "__main__":
         prompt += ' Use this information to reattempt the fix.'
 
         # get list of files modified since start of run. relative paths used for navigating container and db
-        modified_files, modified_files_relative = conduct_run(vuln_id, container, prompt, workspace, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
-        run_path = Path(__file__).parent / 'runs' / container
+        modified_files = conduct_run(vuln_id=vuln_id, container_name=container_name, prompt=prompt, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
+        
+        for m_file in modified_files:
+            content = get_container_cat(container_name, m_file)
+            # update db with patch content
 
-        # copy modified files to experiment run folder for archiving
-        collect_modified_files(modified_files, workspace, run_path, initial_prompt=False)
+            update_patch(run_id=run_id, file_path=str(m_file), content=content)
 
-    # following executes for both first and subsequent attempts
-
-    # must truncate local path for container compatibility
-    base_to_remove = workspace.parents[1]
-    
-    # run container indefinitely and extract original copies of modified files if first attempt
-    try:
-        patch_container = f'{container}-patch'
-        standby_container(patch_container, vuln_id)
-        logger.debug(f'Standby container {patch_container} started for patch evaluation.')
-        logger.debug(f'initial_prompt is {initial_prompt}')
-
-        # # Removing:
-        # if initial_prompt:
-        #     logger.info('Copying original container files')
-        #     for mod_file in modified_files:
-        #         mod_filepath = Path(mod_file)
-        #         filename = mod_filepath.name
-        #         # rel_path will be src/{project}/...
-        #         relative_path = mod_filepath.relative_to(base_to_remove)
-        #         truncated_path = Path(*relative_path.parts[2:])  # remove 'src' and project folder for container path
-        #         logger.debug(f'chopping relative path {relative_path} to {truncated_path} for db')
-
-                # # Removing:
-                # logger.debug(f'docker copy original file {relative_path} to {run_path}/{filename}-original')
-                # docker_copy(patch_container, str(relative_path), run_path, container_source_flag=True)
-
-    except Exception as e:
-        logger.error(f'Error docker copying original files: {e}')
-
-    # copy the modified files into the container
-    for mod_file in modified_files:
-        mod_filepath = Path(mod_file)
-        filename = mod_filepath.name
-        relative_path = mod_filepath.relative_to(base_to_remove)
-        truncated_path = Path(*relative_path.parts[2:])  # remove 'src' and project folder for container path
-        logger.debug(f'chopping relative path {relative_path} to {truncated_path} for db')
-
-        # insert patched file into db
-        with open(mod_filepath, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
-            update_patch(run_id=container, file_path=str(truncated_path), content=content)
-
-            # TODO: once changeover verified
-            # insert_content(run_id=container, file_path=str(truncated_path), kind=ContentType.PATCHED, content=content)
-
-        logger.debug(f'docker copy modified file {mod_filepath} to container at {relative_path}')
-        docker_copy(patch_container, str(mod_filepath), str(relative_path), container_source_flag=False)
+        # TODO look into deleting later
+        run_path = Path(__file__).parent / 'runs' / run_id
 
     # re-compile
-    recompile_container(patch_container)
+    recompile_container(container_name)
     # TODO : Explore how much we need to verify compile success
     # Will compile failure automatically result in re-fuzz crash?
 
     # re-run poc and capture new crash/success log
-    fuzz_result = refuzz(patch_container)
+    fuzz_result = refuzz(container_name)
 
-    insert_crash_log(run_id=container, kind=CrashLogType.PATCH, crash_log=fuzz_result.stderr)
-    
-    # REMOVED crash_log file in favor of db storage
-    # crash_log_path = f'runs/crash_log_{patch_container}.log'
-    # # crash_log_path = run_path / 'crash_first_patch.log'
-    # logger.debug(f'Writing first patch crash log to {crash_log_path}')
-    # logger.info(f'arvo (re-run poc) stderr:\n{fuzz_result.stderr}')
-    # with open(crash_log_path, 'w', encoding='utf-8', errors='replace') as f:
-    #     f.write(fuzz_result.stderr)
-
-    logger.debug(f'removing patch container {patch_container}')
-    cleanup_container(patch_container)
-    fs_path = Path(fs_dir)
-    if fs_path.exists() and fs_path.is_dir():
-        logger.debug(f'removing extracted filesystem at {fs_path}')
-        shutil.rmtree(fs_path, ignore_errors=True)
-
-    shutil.rmtree(run_path, ignore_errors=True)
+    insert_crash_log(run_id=run_id, kind=CrashLogType.PATCH, crash_log=fuzz_result.stderr)
 
     logger.info('######### CARO Experiment Run Complete #########')
 
@@ -290,9 +205,9 @@ if __name__ == "__main__":
 
     # update caro_log in db
     try:
-        update_caro_log(container, str(caro_log_path))
+        update_caro_log(run_id, str(caro_log_path))
     except Exception as e:
-        logger.error(f'Error updating caro_log in database for run {container}: {e}')
+        logger.error(f'Error updating caro_log in database for run {run_id}: {e}')
 
     # will want to use same run folder as first attempt?
     # QUESTION: regenerate original workspace for second attempt?

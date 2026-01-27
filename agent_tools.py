@@ -2,16 +2,17 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from queries import init_db, record_run
-from schema import RunRecord
+from arvo_tools import get_container_cat
+from queries import init_db, record_run, insert_crash_log
+from schema import RunRecord, CrashLogType
 import subprocess
 import time
 
 logger = logging.getLogger(__name__)
 
-def get_model():
+def get_model(container_name: str):
     agent_model = None
-    command = ['codex', 'exec', '/status']
+    command = ['docker', 'exec', container_name, 'codex', 'exec', '/status']
     try:
             
         result = subprocess.run(
@@ -31,25 +32,36 @@ def get_model():
 
     return agent_model
 
+def get_pwd(container_name: str):
+    pwd_cmd = ['docker', 'exec', container_name, 'pwd']
+    try:
+        result = subprocess.run(pwd_cmd, capture_output=True, text=True)
+        workspace_relative = result.stdout.strip()
+        logger.debug(f'workspace_relative is {workspace_relative}')
+        return workspace_relative
+    except subprocess.CalledProcessError as e:
+        logger.error(f'container {container_name} pwd failed: {e}')
+
 # resume_flag = True when instructing agent to resume last or specified session
 # if flag is true, but id is none, last will be used
-def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agent: str, resume_flag: bool = False, resume_session_id: str =None, patch_url: str = None):
+def conduct_run(vuln_id: str, run_id: str, container_name: str, prompt: str, agent: str, resume_flag: bool = False, resume_session_id: str =None, patch_url: str = None):
 
-    agent_model = get_model()
+    agent_model = get_model(container_name)
 
     # first attempt
     if not resume_flag:
-        command = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), prompt]
-        log_path = Path(__file__).parent / "runs" / container / f"agent_{container}.log"
+        command = ['docker', 'exec', container_name, 'codex', 'exec', '--json', '--full-auto', prompt]
+        log_path = Path(__file__).parent / "runs" / run_id / f"agent_{run_id}.log"
 
+    # TODO Must update to docker exec before running second attempts !!! 
 
     # second attempt on 1) last session or 2) specified session
     else:
-        log_path = Path(__file__).parent / "runs" / container / f"agent_{container}_patch2.log"
+        log_path = Path(__file__).parent / "runs" / run_id / f"agent_{run_id}_patch2.log"
         if not resume_session_id:
-            command = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), 'resume', '--last', prompt]
+            command = ['codex', 'exec', '--json', '--full-auto', 'resume', '--last', prompt]
         else:
-            command = ['codex', 'exec', '--json', '--full-auto', '--cd', str(workspace), 'resume', resume_session_id, prompt]
+            command = ['codex', 'exec', '--json', '--full-auto', 'resume', resume_session_id, prompt]
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -60,8 +72,9 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
     duration = 0.0
     return_code = None
     modified_files = []
-    modified_files_relative = []
-    workspace_relative = workspace.relative_to(workspace.parents[1])
+    workspace_relative = ''
+
+    workspace_relative = get_pwd(container_name)    
 
     with open(log_path, 'w', encoding='utf-8') as log_file:
         meta_start = {
@@ -77,8 +90,9 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
 
         log_file.write(json.dumps(meta_start) + '\n')
         log_file.flush()
-        logger.info(f'Beginning Codex execution for {container}')
+        logger.info(f'Beginning Codex execution for {run_id}')
 
+        # this command is formatted for docker exec
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -158,19 +172,26 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
             # get files modified by agent
             try:
                 find_result = subprocess.run([
-                    'find', str(workspace), # search agent's workspace
+                    'docker', 'exec', container_name,
+                    'find', workspace_relative, # search agent's workspace
                     '-type', 'f',
-                    '-not', '-path', '*/.git/*', # ignore .git files
                     '-newermt', f'@{start_time}', # files modified since run's start_time
-                    '-printf', '%T@ %p\n'
+                    '-printf', '%p\n'
                 ],
                 capture_output=True, text=True, check=False)
 
+                if find_result.returncode != 0:
+                    logger.error(f"FIND COMMAND FAILED (Exit Code {find_result.returncode}):")
+                    logger.error(find_result.stderr)
+
+                logger.info(f'find_result stdout: {find_result.stdout}')
+
                 if find_result.stdout:
+                    logger.info('Modified files found. Most recent 10:')
                     result_filelist = find_result.stdout.splitlines()
                     # If numerous modified files found, only keep selection from end 
                     # Agents may build tools to aid investigation leading to many non-patch files
-                    MODIFIED_FILES_MAX = 42
+                    MODIFIED_FILES_MAX = 10
                     if len(result_filelist) > MODIFIED_FILES_MAX:
                         result_filelist = result_filelist[-MODIFIED_FILES_MAX:]
 
@@ -178,10 +199,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
                     logger.info(f"Found {len(result_filelist)} files modified by agent: ")
                     for line in result_filelist:
                         logger.info(line)
-                        parts = line.split(' ', 1)
-                        if len(parts) == 2:
-                            time_str, mod_filepath = parts # time_str can be used to verify mod time
-                            modified_files.append(mod_filepath)
+                        modified_files.append(line)
 
             except Exception as e:
                 logger.error(f'Error finding modified files: {e}')
@@ -211,16 +229,6 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
             raise e
                 
         finally:
-            run_root = workspace.parents[1]
-            for file in modified_files:
-                try:
-                    relative_path = Path(file).relative_to(run_root)
-                    truncated_path = Path(*relative_path.parts[2:])  # remove 'src' and project folder for container path
-                    logger.info(f'Relative modified file path: {relative_path} was file: {file} relative to workspace {workspace}')
-                    logger.info(f'Truncated modified file path for db: {truncated_path}')
-                    modified_files_relative.append(str(truncated_path))
-                except ValueError:
-                    modified_files_relative.append(file)  # fallback to full path if relative fails
 
             # run metrics
             meta_end = {
@@ -229,7 +237,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
                 'timestamp_unix': time.time(),
                 'duration_seconds': duration,
                 'return_code': return_code,
-                'modified_files': modified_files_relative    
+                'modified_files': modified_files    
             }
             log_file.write(json.dumps(meta_end) + '\n')
             log_file.close()
@@ -248,7 +256,7 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
 
             # DTO
             run_data = RunRecord(
-                run_id=container,
+                run_id=run_id,
                 vuln_id=vuln_id,
                 workspace_relative=str(workspace_relative),
                 patch_url=patch_url,
@@ -264,11 +272,15 @@ def conduct_run(vuln_id: str, container: str, prompt: str, workspace: Path, agen
                 resume_id=thread_id,
                 agent_log=agent_log,
                 agent_reasoning=agent_reasoning,
-                modified_files_relative=modified_files_relative
+                modified_files=modified_files
             )
 
             # insert run record into db
             record_run(run_data)
-            logger.info(f'Recorded run in database with ID {container}')
+            logger.info(f'Recorded run in database with ID {run_id}')
+
+            full_path = workspace_relative + '/crash.log'
+            crash_log = get_container_cat(container_name=container_name, file_path=full_path)
+            insert_crash_log(run_id=run_id, kind=CrashLogType.ORIGINAL, crash_log=crash_log)
     
-    return modified_files, modified_files_relative
+    return modified_files

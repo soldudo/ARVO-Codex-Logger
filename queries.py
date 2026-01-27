@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import json
 from typing import Optional
 from schema import ContentType, CrashLogType, RunRecord
 
@@ -106,7 +107,7 @@ def record_run(run_data: RunRecord):
             run_data.agent, run_data.agent_model, run_data.resume_flag, 
             run_data.resume_id, run_data.agent_log, run_data.agent_reasoning
         ))
-        for filepath in run_data.modified_files_relative:
+        for filepath in run_data.modified_files:
             cursor.execute('''
                 INSERT INTO run_files (run_id, file_path)
                 VALUES (?, ?)
@@ -278,6 +279,71 @@ def get_agent_log(run_id: str):
         if should_close:
             conn.close()
 
+def get_agent_trace(run_id: str, conn: Optional[sqlite3.Connection]=None):
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = '''
+        SELECT crash_resolved, agent_log
+        FROM runs
+        WHERE run_id = ?
+        '''
+        cursor.execute(query, (run_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            logger.error(f'Run {run_id} not found in db')
+            return None
+        
+        crash_resolved = row['crash_resolved']
+        logger.info(f'crash_res: {crash_resolved}')
+        agent_log = row['agent_log']
+        resolution_str = 'SUCCESS' if crash_resolved else 'FAILURE'
+
+        trace_lines = []
+    
+        for line in agent_log.splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+
+                item = entry.get('data', {}).get('item', {})
+                item_type = item.get('type')
+
+                if item_type == 'reasoning':
+                    text = item.get('text', '').replace('\n', ' ').strip()
+                    trace_lines.append(f'[THOUGHT] {text}')
+
+                elif item_type == 'command_execution':
+                    cmd = item.get('command', '').strip()
+                    trace_lines.append(f'[CMD] {cmd}')
+                    
+            except json.JSONDecodeError:
+                continue
+        
+        trace_block = (
+            f'[METADATA]\n'
+            f'Run ID: {run_id}\n'
+            f'Result: {resolution_str}\n\n'
+            f'[TRACE]\n' + '\n'.join(trace_lines)
+        )
+        return trace_block
+    
+    except sqlite3.Error as e:
+        logger.error(f'db error retrieving agent_log for {run_id}: {e}')
+        return None
+    finally:
+        if should_close:
+            conn.close() 
+
+
 def update_agent_log(run_id: str, agent_log_path: str):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
@@ -446,6 +512,7 @@ def update_ground_truth(vuln_id: int, file_path: str, content: str, conn: Option
         else:
             check_cur = conn.execute(
                 "SELECT 1 FROM original_files WHERE vuln_id = ? AND file_path = ?",
+                (vuln_id, file_path)
             )
             if check_cur.fetchone():
                 logger.info(f"Skipped update: {file_path} (Vuln {vuln_id}) already has content.")

@@ -34,4 +34,4 @@ class RunRecord:
     resume_id: str
     agent_log: str
     agent_reasoning: str
-    modified_files_relative: List[str] = field(default_factory=list)
+    modified_files: List[str] = field(default_factory=list)

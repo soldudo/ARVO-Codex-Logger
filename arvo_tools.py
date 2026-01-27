@@ -143,16 +143,10 @@ def recompile_container(container_name: str):
 
 # helper function to move files in and out of docker containers
 def docker_copy(container_name: str, src_path: str, dest_path: str, container_source_flag: bool):
-    filename = Path(src_path).name
-    # append -original to filename if copying from container
-    # WARNING : this assumes the only occasion to extract files from container is to get original versions
-    full_dest_path = Path(dest_path) / f'{filename}-original' if container_source_flag else Path(dest_path)
     if container_source_flag:
-        copy_cmd = ['docker', 'cp', f'{container_name}:{src_path}', f'{full_dest_path}']
-    # TODO / WARNING : the else path has not been tested yet. 
-    # Update, it probably has been tested by now. Todo still: test explicitly.
+        copy_cmd = ['docker', 'cp', f'{container_name}:{src_path}', f'{dest_path}']
     else:
-        copy_cmd = ['docker', 'cp', src_path, f'{container_name}:{full_dest_path}']
+        copy_cmd = ['docker', 'cp', src_path, f'{container_name}:{dest_path}']
     
     logger.info(f"Copying {'from' if container_source_flag else 'to'} container {container_name}: {src_path} -> {dest_path}")
     run_command(copy_cmd)
@@ -197,6 +191,15 @@ def get_original(arvo_id: int, project:str, file_path: str):
             logger.error(f'Error reading file from container: {e}')
             return None
 
+def get_container_cat(container_name: str, file_path: str):
+    cmd = ['docker', 'exec', container_name, 'cat', file_path]
+    try:
+        result = run_command(cmd=cmd, stdout=subprocess.PIPE)
+        return result.stdout
+    except subprocess.CalledProcessError:
+        logger.warning(f'File not found in continer: {file_path}')
+        return None
+    
 # Running arvo_tools.py as main is currently disabled due to malfunction
 # Code remains for convenience if debug testing is required
 
