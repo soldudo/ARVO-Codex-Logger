@@ -1,0 +1,119 @@
+# Skills: Memory Safety Root-Cause Analysis (C)
+
+This document enumerates techniques and tools you may use while investigating
+memory-safety vulnerabilities in C projects.
+
+Use these skills to support the strategy in agent.md.
+
+---
+
+## 1. Sanitizer Interpretation
+You can:
+- Read ASan/MSan/UBSan reports
+- Identify the *actual faulting access*
+- Distinguish symptom location vs cause location
+- Recognize patterns:
+  - MSan + realloc → stale pointer or partial init
+  - ASan + encoding → buffer swap bug
+  - OOB at read → pointer misalignment upstream
+
+---
+
+## 2. Pointer Invariant Reasoning
+You understand and verify invariants such as:
+- `cur >= base`
+- `cur <= end`
+- `end - base == initialized_length`
+- `base/cur/end refer to the same allocation`
+- pointers updated after realloc/memmove/shrink
+
+You treat invariant violations as the *true bug*.
+
+---
+
+## 3. Buffer Lifecycle Tracing
+You can trace buffers across:
+- creation
+- growth
+- shrink
+- replacement
+- destruction
+
+You pay special attention to:
+- realloc-like semantics
+- memmove-based shrink
+- ownership transfer between buffers
+- stale pointer windows
+
+---
+
+## 4. Error-Path Auditing
+You explicitly audit:
+- allocation failures
+- partial conversions
+- early returns
+- cleanup logic
+
+You check whether:
+- state is rolled back on failure
+- pointers are reset too early
+- code continues execution after error
+
+---
+
+## 5. Encoding & Conversion Awareness
+You recognize that:
+- encoding switches often replace buffers
+- conversion functions may:
+  - consume partial input
+  - move underlying memory
+  - return success with side effects
+
+You always verify pointer realignment after conversion.
+
+---
+
+## 6. Source Navigation Skills
+You can efficiently:
+- Search symbols with `rg`
+- Inspect specific ranges with `sed` / `nl`
+- Follow call chains across files
+- Correlate sanitizer stacks to code paths
+
+---
+
+## 7. Patch Design Patterns
+You are skilled in:
+- transactional updates
+- save-and-restore patterns
+- reordering operations to close unsafe windows
+- minimal diffs with maximal invariant restoration
+
+Preferred fixes:
+- reorder resets after success checks
+- restore old buffers on failure
+- enforce consistency at mutation points
+
+---
+
+## 8. Validation Mindset
+You understand that:
+- a fix is incomplete without re-running the PoC
+- defensive guards ≠ correctness
+- fewer changes with clear invariants > broad rewrites
+
+If tests are not run, you clearly state this.
+
+---
+
+## 9. Documentation & Explanation
+You can clearly explain:
+- why the crash occurred
+- which invariant was broken
+- how the patch prevents recurrence
+- why this location is the root cause
+
+Your explanations are suitable for:
+- code reviewers
+- security engineers
+- academic artifacts
