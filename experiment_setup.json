@@ -1,5 +1,6 @@
-{"arvo_id": 42531212,
-    "container_name": "i-42531212",
+{"arvo_id": 424242614,
+    "container_name": "rootainer",
+    "agent": "claude",
     "initial_prompt": true,
     "source_crash_db": false,
     "run_id": null,

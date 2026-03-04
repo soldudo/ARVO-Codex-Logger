@@ -28,3 +28,5 @@ def test_pwd(container_name: str):
         print(f'container {container_name} pwd failed: {e}')
 
 print(test_pwd(container_name))
+
+def test_conduct_run(vuln_id=424242614, )

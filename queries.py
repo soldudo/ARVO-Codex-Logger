@@ -241,6 +241,21 @@ def get_crash_log(run_id: str, kind: CrashLogType = CrashLogType.PATCH, conn: Op
         if should_close:
             conn.close()
 
+def get_original_crash_log(arvo_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT crash_log_original FROM original_files WHERE vuln_id = ?', (arvo_id,))
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        else:
+            return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_resume_id(run_id: str, conn: Optional[sqlite3.Connection] = None):
     should_close = False
     if conn is None:

@@ -40,11 +40,13 @@ def run_command(cmd, check=True, stdout=None, stderr=subprocess.PIPE, timeout=No
         logger.error(f'Command timed out: {e}')
         raise
 
+# TODO: Remove this feature
 def make_fs(container_name: str):
     fs_dir = os.path.join(os.getcwd(), 'scratch_fs', container_name)
     os.makedirs(fs_dir, exist_ok=True)
     return fs_dir
 
+# TODO: Retire pull_call and verify log isn't cluttered 
 # change fix_flag to 'fix' to load the patched container
 def load_container(arvo_id: int, fix_flag: str = 'vul'):
     # pull container first for concise crash_log
@@ -104,6 +106,14 @@ def cleanup_container(container_name: str):
     cmd = ['docker', 'rm', '-f', container_name]
     run_command(cmd, check=False)
 
+def cleanup_cinc(container_name: str, rootainer_name: str = 'rootainer'):
+    logger.debug(f"Cleaning up container {container_name} in container {rootainer_name}")
+    root_cmd = ['docker', 'exec', rootainer_name]
+    target_cmd = ['docker', 'rm', '-f', container_name]
+    full_cmd = root_cmd + target_cmd
+    run_command(full_cmd, check=False)
+
+
 def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
     stby_cmd = ['docker', 'run', '-d',
                  '--name', container_name,
@@ -113,6 +123,20 @@ def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
     ]
     logger.debug(f"Starting standby container {container_name}")
     run_command(stby_cmd)
+
+def standby_dind(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
+    dind_cmd = ['docker', 'exec', 'rootainer']
+    stby_cmd = ['docker', 'run', '-d',
+                 '--name', container_name,
+                 '--entrypoint', 'tail',
+                 f'n132/arvo:{vuln_id}-{fix_flag}',
+                 '-f', '/dev/null'
+    ]
+    logger.debug(f"Starting standby container in rootainer {container_name}")
+    full_cmd = dind_cmd + stby_cmd
+    run_command(full_cmd)
+
+
 
 def recompile_container(container_name: str):
     KEEP_LINES = 20

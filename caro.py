@@ -5,12 +5,10 @@ import shutil
 import sys
 from pathlib import Path
 import time
-from queries import get_context, insert_crash_log, update_caro_log, get_crash_log, get_resume_id, update_patch, update_original, update_ground_truth
+from queries import get_context, update_caro_log, update_patch, update_original, update_ground_truth
 from agent_tools import conduct_run
-from arvo_tools import initial_setup, recompile_container, refuzz, standby_container, docker_copy, cleanup_container, get_original, get_container_cat
+from arvo_tools import get_original, get_container_cat
 from commit_files import download_commit_files
-from schema import CrashLogType, ContentType
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +68,7 @@ if __name__ == "__main__":
     agent = experiment_params.get('agent', 'codex')
     resume_flag = experiment_params.get('resume_flag', False) 
     
-    # Defining the run name (previously container) using arvo-vuln_id-vuln_flag-timestamp
+    # Definine the run name (previously container) as arvo-vuln_id-vuln_flag-timestamp
     run_id = f'arvo-{vuln_id}-vul{int(time.time())}'
 
     # Get project and crash type from ARVO.db
@@ -85,32 +83,13 @@ if __name__ == "__main__":
     # Use experiment_setup.json to indicate if this is an initial prompt
     if initial_prompt:
         # localization only prompt
-        prompt = f'Investigate the memory safety vulnerability causing the {crash_type} in the {project} project. Please initialize your environment using the memory_safety_agent.md persona. Use the patterns and checklist provided in the memory_skills.md file. Localize the source causing this crash by providing the file(s) function(s) and line(s).'
-
-        # patch the vulnerability prompt
-        # prompt = f'Use the vulnerability localization analysis found in agent_analysis.txt to fix the memory safety vulnerability causing the {crash_type} in the {project} project. Please initialize your environment using the memory_safety_agent.md persona. Use the patterns provided in the memory_skills.md file. Provide the lines of code and file locations changed in this task. '
+        prompt = f'Investigate the memory safety vulnerability causing the {crash_type} in the {project} project as shown in the opt/agent/crash.log file. Please initialize your environment using the opt/agent/memory_safety_agent.md persona. Use the patterns and checklist provided in the opt/agent/memory_safety_skills.md file. Both markdown files are located in the root folder. Localize the source causing this crash by providing the relevant files, functions and lines.'
 
         # conduct the experiment
-        modified_files = conduct_run(vuln_id=vuln_id, run_id=run_id, container_name=container_name, prompt=prompt, agent=agent, resume_flag=False, patch_url=patch_url)
+        conduct_run(vuln_id=vuln_id, run_id=run_id, container_name=container_name, prompt=prompt, agent=agent, resume_flag=False, patch_url=patch_url)
 
         # copy original versions of modified files to db
-        for m_file in modified_files:
-            logger.info(f'Getting cat for m_file: {m_file}')
-            content = get_container_cat(container_name, m_file)
-            # update db with patch content
-            logger.info(f'updating {run_id}\nfile {m_file}')
-            update_patch(run_id=run_id, file_path=str(m_file), content=content)
-
-            original_file = get_original(vuln_id, project, m_file)  
-
-            if original_file is None:
-                logger.info(f'{m_file} not found in container, skipping..')
-                continue
-
-            logger.info(f'File: {m_file}')
-            logger.debug('Excerpt: \n%s', original_file[:300])
-            update_original(vuln_id=vuln_id, file_path=m_file, content=original_file)
-            
+        
         run_path = Path(__file__).parent / 'runs' / run_id
 
         # download ground truth from repo commit url
@@ -137,74 +116,10 @@ if __name__ == "__main__":
                 except Exception as e:
                     logger.error(f'Error reading ground truth file {gt_file} for database insertion: {e}')
         except Exception as e:
-            logger.error(f'Skipping download. Error getting commit files from {patch_url}: {e}')
-
-    # TODO: Still needs updated container implementation to match first try run
-    # DO NOT RUN SECOND ATTEMPTS UNTIL THIS IS FIXED!
-    # logic for second attempt at patching
-    else:
-        prompt = 'Your previous fixes did not remove the crash. '
-        # load experiment settings from json
-        resume_id = experiment_params.get('resume_id', None)
-        source_crash_flag = experiment_params.get('source_crash_db', False)
-        run_id_prev = experiment_params.get('run_id', None)
-        source_resume_id = experiment_params.get('source_resume_db', False)
-        crash_log_patch = experiment_params.get('crash_log_patch', None)
-        additional_context = experiment_params.get('additional_context', '')
-
-        # if flag true get prev patch crash from db
-        if source_crash_flag and run_id_prev:
-            crash_log = get_crash_log(run_id=run_id_prev, kind=CrashLogType.PATCH)
-            logger.debug(f'Loaded prev patch crash log: {crash_log}')
-            if source_resume_id:
-                resume_id = get_resume_id(run_id=run_id_prev)
-                logger.info(f'Query produced resume_id: {resume_id}')
-
-        # fallback on loading crash from file
-        elif crash_log_patch:
-            crash_path = Path(crash_log_patch)
-            if crash_path.exists():
-                logger.debug(f"Reading first attempt's crash log from {crash_path}")
-                try:
-                    with open(crash_path, "r", encoding="utf-8", errors="replace") as f:
-                        crash_log = f.read()
-                        prompt = 'Your previous fixes did not remove the crash as indicated by this new crash log: '
-                        prompt += f'<crash_log>{crash_log}</crash_log>'
-                except FileNotFoundError:
-                    logger.error(f"Error: The file {crash_path} was not found.")
-        
-        prompt += ' The workspace has been reset with the original files. ' 
-        if additional_context:
-            prompt += additional_context
-        # Example second try context: A known correct fix made changes to the following files: src/internal.c around lines 21167 - 21171, 23224, 25164 and 25176; wolfcrypt/src/dh.c near lines 1212, 1244, 1284 and 1289; and wolfcrypt/test/test.c near lines 14644, 14766 and 14812.
-        prompt += ' Use this information to reattempt the fix.'
-
-        # get list of files modified since start of run. relative paths used for navigating container and db
-        modified_files = conduct_run(vuln_id=vuln_id, container_name=container_name, prompt=prompt, agent=agent, resume_flag=True, resume_session_id=resume_id, patch_url=patch_url)
-        
-        for m_file in modified_files:
-            content = get_container_cat(container_name, m_file)
-            # update db with patch content
-
-            update_patch(run_id=run_id, file_path=str(m_file), content=content)
-
-        # TODO look into deleting later
-        run_path = Path(__file__).parent / 'runs' / run_id
-
-    # re-compile
-    recompile_container(container_name)
-    # TODO : Explore how much we need to verify compile success
-    # Will compile failure automatically result in re-fuzz crash?
-
-    # re-run poc and capture new crash/success log
-    fuzz_result = refuzz(container_name)
-
-    insert_crash_log(run_id=run_id, kind=CrashLogType.PATCH, crash_log=fuzz_result.stderr)
+            logger.error(f'Skipping download. Error getting commit files from {patch_url}: {e}')    
 
     logger.info('######### CARO Experiment Run Complete #########')
-
     caro_dir = Path(__file__).parent
-
     caro_log_path = caro_dir / 'caro.log'
 
     # update caro_log in db
@@ -212,8 +127,3 @@ if __name__ == "__main__":
         update_caro_log(run_id, str(caro_log_path))
     except Exception as e:
         logger.error(f'Error updating caro_log in database for run {run_id}: {e}')
-
-    # will want to use same run folder as first attempt?
-    # QUESTION: regenerate original workspace for second attempt?
-    # if the agent's patch did not resolve the crash are its changes benign or necessitate more fixes?
-    # For now agent's second attempt will start from original codebase again
