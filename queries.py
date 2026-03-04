@@ -245,7 +245,7 @@ def get_original_crash_log(arvo_id: int):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT crash_log_original FROM original_files WHERE vuln_id = ?', (arvo_id,))
+        cursor.execute('SELECT crash_output FROM arvo WHERE localId = ?', (arvo_id,))
         row = cursor.fetchone()
         if row:
             return row[0]

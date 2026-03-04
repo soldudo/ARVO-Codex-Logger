@@ -1,12 +1,5 @@
 {"arvo_id": 424242614,
     "container_name": "rootainer",
     "agent": "claude",
-    "initial_prompt": true,
-    "source_crash_db": false,
-    "run_id": null,
-    "source_resume_db": false,
-    "crash_log_patch": null,
-    "resume_flag": false,
-    "resume_id": null,
-    "additional_context": null
+    "initial_prompt": true
 }
