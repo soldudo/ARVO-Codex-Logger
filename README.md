@@ -29,7 +29,8 @@ Caro injects a copy of the arvo vulnerability's original crash log from the expe
 * Default permission mode - Don't Ask (default was default)
 * Output mode - Explanatory (default was default)
 * Model - Opus 4.6 High effort (Sonet 4.6 was default)
-  ![alt text](image.png)
+  <img width="692" height="237" alt="image" src="https://github.com/user-attachments/assets/d27b53e1-29ce-4498-b604-312a2c28d8be" />
+
 * Copy memory_safety_agent and skills.md files to opt/agent/ in rootainer
 * `docker cp memory_safety_skills.md rootainer:opt/agent/memory_safety_skills.md`
 
