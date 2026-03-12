@@ -52,41 +52,20 @@ class RunViewerApp:
         ttk.Button(toolbar, text="Filter/Refresh", command=self.refresh_data).pack(side=tk.LEFT, padx=5)
 
         # --- Treeview (Table) ---
-        columns = ("run_id", "vuln_id", "project", "crash_type", "resume_flag", "timestamp", "duration", "total_tokens", "resolved")
+        columns = ("run_id", "vuln_id", "timestamp", "duration", "total_tokens", "resolved")
         self.tree = ttk.Treeview(self.top_frame, columns=columns, show="headings", selectmode="browse")
         
-        # # Define Headings
-        # self.tree.heading("run_id", text="Run ID")
-        # self.tree.heading("vuln_id", text="Vuln ID")
-        # self.tree.heading("project", text="Project")
-        # self.tree.heading("crash_type", text="Crash Type")
-        # self.tree.heading("timestamp", text="Timestamp")
-        # self.tree.heading("duration", text="Duration (s)")
-        # self.tree.heading("total_tokens", text="Total Tokens")
-        # self.tree.heading("resolved", text="Resolved?")
-
-        headers = {
-            "run_id": "Run ID",
-            "vuln_id": "Vuln ID",
-            "project": "Project",
-            "crash_type": "Crash Type",
-            "resume_flag": "Second Try",
-            "timestamp": "Timestamp",
-            "duration": "Duration (s)",
-            "total_tokens": "Total Tokens",
-            "resolved": "Resolved?"
-        }
-
-        for col, text in headers.items():
-            # We bind the command here. Notice "reverse=False" is the default starting sort.
-            self.tree.heading(col, text=text, command=lambda c=col: self.sort_column(c, False))
+        # Define Headings
+        self.tree.heading("run_id", text="Run ID")
+        self.tree.heading("vuln_id", text="Vuln ID")
+        self.tree.heading("timestamp", text="Timestamp")
+        self.tree.heading("duration", text="Duration (s)")
+        self.tree.heading("total_tokens", text="Total Tokens")
+        self.tree.heading("resolved", text="Resolved?")
 
         # Define Column Widths
         self.tree.column("run_id", width=100)
         self.tree.column("vuln_id", width=60)
-        self.tree.column("project", width=60)
-        self.tree.column("crash_type", width=100)
-        self.tree.column("resume_flag", width=60)
         self.tree.column("timestamp", width=120)
         self.tree.column("duration", width=80)
         self.tree.column("total_tokens", width=80)
@@ -125,14 +104,14 @@ class RunViewerApp:
             self.notebook.add(frame, text=tab_name)
             
             # Text area with scrollbar
-            text_area = tk.Text(frame, wrap=tk.WORD, font=("Consolas", 10)) # Log-friendly font
+            text_area = tk.Text(frame, wrap=tk.NONE, font=("Consolas", 10)) # Log-friendly font
             v_scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text_area.yview)
-            # h_scroll = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=text_area.xview)
+            h_scroll = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=text_area.xview)
             
-            text_area.configure(yscroll=v_scroll.set)#, xscroll=h_scroll.set)
+            text_area.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
             
             v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-            # h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+            h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
             text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             
             self.text_widgets[tab_name] = text_area
@@ -146,9 +125,9 @@ class RunViewerApp:
         search_term = f"%{self.search_var.get()}%"
         
         query = """
-            SELECT r.run_id, r.vuln_id, a.project, a.crash_type, r.resume_flag, r.timestamp, r.duration, r.total_tokens, r.crash_resolved
-            FROM runs r LEFT JOIN arvo a ON r.vuln_id = a.localId
-            WHERE r.run_id LIKE ? OR r.vuln_id LIKE ?
+            SELECT run_id, vuln_id, timestamp, duration, total_tokens, crash_resolved 
+            FROM runs 
+            WHERE run_id LIKE ? OR vuln_id LIKE ?
             ORDER BY timestamp DESC
         """
         
@@ -158,7 +137,7 @@ class RunViewerApp:
             
             for row in rows:
                 # Color code based on resolution status
-                tags = ('success',) if row[8] else ('fail',)
+                tags = ('success',) if row[5] else ('fail',)
                 self.tree.insert("", tk.END, values=row, tags=tags)
             
             # Configure tag colors
@@ -206,30 +185,6 @@ class RunViewerApp:
                     widget.insert(tk.END, "<No Data>")
             
             widget.config(state=tk.DISABLED) # Make read-only
-
-    def sort_column(self, col, reverse):
-        """Sorts the treeview contents when a column header is clicked."""
-        # 1. Retrieve all items from the tree as (value, item_id) tuples
-        l = [(self.tree.set(k, col), k) for k in self.tree.get_children('')]
-
-        # 2. Sort the data
-        # We use a helper key to convert strings to numbers if possible
-        # so that "10" comes after "2", not before it.
-        def sort_key(tup):
-            value = tup[0]
-            try:
-                return float(value)
-            except ValueError:
-                return value.lower() # Case-insensitive string sort
-
-        l.sort(key=sort_key, reverse=reverse)
-
-        # 3. Rearrange items in the Treeview
-        for index, (val, k) in enumerate(l):
-            self.tree.move(k, '', index)
-
-        # 4. Update the heading to sort in the opposite direction next time
-        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
 
 # --- DUMMY DATA GENERATOR (FOR TESTING) ---
 def create_mock_db():
