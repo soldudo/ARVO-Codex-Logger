@@ -39,10 +39,10 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).parent
 DB_PATH = str(REPO_ROOT / 'arvo_loc_runs.db')
 DEFAULT_RUNS_DIR = REPO_ROOT / 'runs'
-DEFAULT_RUN_TIMEOUT = 7200  # seconds
-DEFAULT_MAX_ATTEMPTS = 3          # usage-limited attempts per item before giving up
+DEFAULT_RUN_TIMEOUT = 5400  # seconds
+DEFAULT_MAX_ATTEMPTS = 2          # usage-limited attempts per item before giving up
 RESUME_BUFFER_SECONDS = 300       # slack added past the parsed reset time
-FALLBACK_RETRY_SECONDS = 1800     # retry interval when the reset time can't be parsed
+FALLBACK_RETRY_SECONDS = 2700     # retry interval when the reset time can't be parsed
 
 ITEM_STATUSES = ('pending', 'running', 'complete', 'usage_limited', 'error', 'skipped')
 
