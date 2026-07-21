@@ -7,14 +7,14 @@ machine-local arvo_loc_runs.db; the ledger holds only what is needed to answer
 "which (vuln x experiment_tag) cells still need a run?" and to queue the gaps.
 
 Usage:
-    python ledger.py init --ledger-dir ~/arvo-run-ledger --remote git@github.com:team/arvo-run-ledger.git
+    python ledger.py init --ledger-dir ~/caro-ledger --remote git@github.com:team/caro-ledger.git
     python ledger.py report [--db arvo_loc_runs.db] [--machine NAME]
     python ledger.py coverage [--tag baseline-patch-envmd] [--json]
     python ledger.py gaps --tag baseline-patch-envmd --count 20 [--project ndpi ...]
     python ledger.py claim --tag baseline-patch-envmd --ids 101 102 [--campaign fill-jul19]
 
-The ledger directory is resolved from --ledger-dir or the ARVO_LEDGER_DIR env
-var; the machine name from ARVO_LEDGER_MACHINE or the hostname. Every command
+The ledger directory is resolved from --ledger-dir or the CARO_LEDGER_DIR env
+var; the machine name from CARO_LEDGER_MACHINE or the hostname. Every command
 tolerates being offline: facts are committed locally and pushed on the next
 opportunity. See LEDGER.md for setup and the fact format.
 """
@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent
 DEFAULT_DB_PATH = str(REPO_ROOT / 'arvo_loc_runs.db')
-LEDGER_DIR_ENV = 'ARVO_LEDGER_DIR'
-MACHINE_ENV = 'ARVO_LEDGER_MACHINE'
+LEDGER_DIR_ENV = 'CARO_LEDGER_DIR'
+MACHINE_ENV = 'CARO_LEDGER_MACHINE'
 DEFAULT_CLAIM_TTL_DAYS = 3
 
 RUN_OUTCOMES = ('success', 'error', 'usage_limited')

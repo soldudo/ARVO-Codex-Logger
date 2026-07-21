@@ -18,17 +18,17 @@ Tests: `test_ledger.py` (`python -m pytest test_ledger.py`).
 
 ## One-time setup
 
-**1. One person creates the shared repo** (private, e.g. `arvo-run-ledger` on
+**1. One person creates the shared repo** (private, e.g. `caro-ledger` on
 GitHub). It starts empty — no structure required.
 
 **2. Every machine clones it and sets two env vars** (in `~/.bashrc` or similar):
 
 ```bash
-python ledger.py init --ledger-dir ~/arvo-run-ledger \
-    --remote git@github.com:<org>/arvo-run-ledger.git
+python ledger.py init --ledger-dir ~/caro-ledger \
+    --remote git@github.com:<org>/caro-ledger.git
 
-export ARVO_LEDGER_DIR=~/arvo-run-ledger
-export ARVO_LEDGER_MACHINE=splab        # optional; defaults to the hostname
+export CARO_LEDGER_DIR=~/caro-ledger
+export CARO_LEDGER_MACHINE=splab        # optional; defaults to the hostname
 ```
 
 Machine names must be unique across the team (each machine writes only to
@@ -91,7 +91,7 @@ One JSON object per line in `<machine>.jsonl`:
 
 ## Commands
 
-All commands take `--ledger-dir` (default `$ARVO_LEDGER_DIR`) and `--no-sync`
+All commands take `--ledger-dir` (default `$CARO_LEDGER_DIR`) and `--no-sync`
 (skip the `git pull` before reading/writing).
 
 ### `report` — publish this machine's runs
@@ -137,7 +137,7 @@ For work you're about to run outside gap-fill (gap-fill claims automatically).
 ### `init` — create or clone the ledger repo
 
 ```bash
-python ledger.py init --ledger-dir ~/arvo-run-ledger [--remote <git-url>]
+python ledger.py init --ledger-dir ~/caro-ledger [--remote <git-url>]
 ```
 
 ---
@@ -159,7 +159,7 @@ ledger** so other machines' gap-fills skip them. By default cells whose only
 runs failed are also skipped (a failure often signals an infra issue worth a
 human look); add `--retry-failed` to re-attempt them.
 
-During `run`, if `ARVO_LEDGER_DIR` is set (or `--ledger-dir` is passed), the
+During `run`, if `CARO_LEDGER_DIR` is set (or `--ledger-dir` is passed), the
 runner **reports facts to the ledger after every item automatically** — this is
 what makes coverage "dynamic": teammates see your results within one run, not
 whenever you remember to sync. Fully automatic operation is then:
@@ -175,7 +175,7 @@ nohup bash -c 'while python run_experiments.py enqueue \
 
 ### Claims: semantics and honesty about races
 
-- A claim means "a machine has queued this cell"; it expires after **7 days**
+- A claim means "a machine has queued this cell"; it expires after **3 days**
   (`--claim-ttl-days`) so an abandoned campaign can't block a cell forever.
 - Claims narrow the double-run window from hours to seconds, but don't close it:
   two machines gap-filling in the same instant can both select the same vuln

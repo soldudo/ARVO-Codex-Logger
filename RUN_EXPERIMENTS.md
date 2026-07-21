@@ -312,7 +312,7 @@ run facts so the team can see combined coverage and queue unrun experiments:
   `--reproduced-only`, sampled reproducibly with `--seed`, and claims them in the
   ledger so other machines skip them (`--retry-failed` re-attempts failed-only cells).
 - `run` reports each item's outcome to the ledger automatically when
-  `ARVO_LEDGER_DIR` is set or `--ledger-dir` is passed; ledger failures never
+  `CARO_LEDGER_DIR` is set or `--ledger-dir` is passed; ledger failures never
   interrupt a campaign.
 
 ## Limitations / not yet implemented
