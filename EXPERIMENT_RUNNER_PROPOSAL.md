@@ -3,7 +3,8 @@
 > **Status:** Phases 1 and 2 are implemented in `run_experiments.py`. See
 > `RUN_EXPERIMENTS.md` for as-built documentation and usage instructions; this
 > document is kept as the original design rationale. Phase 3 (random selection)
-> is not yet implemented.
+> was superseded by multi-machine, coverage-driven gap-fill selection backed by
+> a shared git ledger — see `LEDGER.md`.
 
 A replacement for `experiments.py` that runs batches of CARO experiments with durable
 progress tracking, flexible vulnerability selection, and automatic detection/resume of

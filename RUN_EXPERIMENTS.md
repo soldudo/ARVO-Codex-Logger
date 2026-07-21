@@ -301,12 +301,26 @@ Individual agent run logs continue to land where caro puts them
 | item exhausted `--max-attempts` | it's in `error`; `requeue` it to start that vuln over from scratch |
 | want to re-run a completed vuln under the same experiment | `requeue --status complete --ids <id>` (the old run rows remain in `runs`) |
 
+## Multi-machine coverage and gap-fill enqueueing
+
+When several researchers run experiments on separate machines with separate DBs,
+the git-backed **ledger** (`ledger.py`, documented in `LEDGER.md`) shares minimal
+run facts so the team can see combined coverage and queue unrun experiments:
+
+- `enqueue --fill-gaps N` selects up to N vulns that no machine has successfully
+  run under the campaign's experiment_tag, filtered by `--project`, `--id-min/max`,
+  `--reproduced-only`, sampled reproducibly with `--seed`, and claims them in the
+  ledger so other machines skip them (`--retry-failed` re-attempts failed-only cells).
+- `run` reports each item's outcome to the ledger automatically when
+  `ARVO_LEDGER_DIR` is set or `--ledger-dir` is passed; ledger failures never
+  interrupt a campaign.
+
 ## Limitations / not yet implemented
 
-- **Random vulnerability selection** (`--random N` with `--project`, `--id-min/max`,
-  `--crash-type`, `--exclude-attempted`, `--seed` filters) is phase 3 of the
-  proposal and not yet built. Currently ids must be listed explicitly or via
-  `--ids-file`.
+- **Coverage-blind random selection** (the proposal's phase-3 `--random N`) was
+  superseded by ledger-driven `--fill-gaps`, which does filtered, seeded sampling
+  restricted to *unrun* vulns. There is no way to random-sample while ignoring
+  coverage; if that's ever wanted, sample against an empty ledger.
 - **No parallelism** — inherent to caro's fixed container names; also mostly
   pointless under a shared usage limit.
 - **No CLI for `config_overrides`** — the column is honored when populated, but

@@ -392,7 +392,37 @@ def test_classify_unparseable_limit_uses_fallback_retry(conn, monkeypatch):
 
     outcome = rx.classify_outcome(conn, 101, started)
     assert outcome['status'] == 'usage_limited'
-    assert outcome['resume_after'] == '2026-07-02T15:30:00+00:00'
+    expected = (fixed + timedelta(seconds=rx.FALLBACK_RETRY_SECONDS)
+                ).isoformat(timespec='seconds')
+    assert outcome['resume_after'] == expected
+
+
+# ----- ledger reporter hook -----
+
+def test_run_campaign_calls_reporter_after_each_item(conn, tmp_path):
+    rx.enqueue('camp1', 'baseline-patch-envmd', [101, 102], BASE_CONFIG, conn=conn)
+    calls = []
+    counts = rx.run_campaign('camp1', conn=conn, runs_dir=tmp_path,
+                             invoke=make_invoke(conn), reporter=lambda: calls.append(1))
+    assert counts == {'complete': 2}
+    assert len(calls) == 2
+
+
+def test_run_campaign_reporter_failure_does_not_break_run(conn, tmp_path):
+    rx.enqueue('camp1', 'baseline-patch-envmd', [101], BASE_CONFIG, conn=conn)
+
+    def broken_reporter():
+        raise RuntimeError('ledger unreachable')
+
+    counts = rx.run_campaign('camp1', conn=conn, runs_dir=tmp_path,
+                             invoke=make_invoke(conn), reporter=broken_reporter)
+    assert counts == {'complete': 1}
+
+
+def test_enqueue_returns_added_ids(conn):
+    summary = rx.enqueue('camp1', 'baseline-patch-envmd', [101, 102, 999],
+                         BASE_CONFIG, conn=conn)
+    assert summary['added_ids'] == [101, 102]
 
 
 # ----- requeue / status -----

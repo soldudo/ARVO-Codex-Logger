@@ -34,6 +34,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import ledger
+
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent
@@ -169,7 +171,7 @@ def enqueue(campaign_tag: str, experiment_tag: Optional[str], vuln_ids: list[int
                         f"--experiment-tag '{experiment_tag}' differs from campaign's existing "
                         f"experiment; keeping the existing one.")
 
-        added, duplicates, unknown = 0, 0, []
+        added_ids, duplicates, unknown = [], 0, []
         for vuln_id in vuln_ids:
             if conn.execute('SELECT 1 FROM arvo WHERE localId = ?', (vuln_id,)).fetchone() is None:
                 unknown.append(vuln_id)
@@ -179,7 +181,7 @@ def enqueue(campaign_tag: str, experiment_tag: Optional[str], vuln_ids: list[int
                     INSERT INTO campaign_items (campaign_id, vuln_id, status, updated_at)
                     VALUES (?, ?, 'pending', ?)
                 ''', (campaign_id, vuln_id, _timestamp_now()))
-                added += 1
+                added_ids.append(vuln_id)
             except sqlite3.IntegrityError:
                 duplicates += 1
         conn.commit()
@@ -188,8 +190,8 @@ def enqueue(campaign_tag: str, experiment_tag: Optional[str], vuln_ids: list[int
             logger.warning(f'Skipped ids not present in arvo table: {unknown}')
         if duplicates:
             logger.info(f'Skipped {duplicates} id(s) already in the campaign.')
-        logger.info(f"Enqueued {added} item(s) in campaign '{campaign_tag}'.")
-        return {'campaign_id': campaign_id, 'added': added,
+        logger.info(f"Enqueued {len(added_ids)} item(s) in campaign '{campaign_tag}'.")
+        return {'campaign_id': campaign_id, 'added': len(added_ids), 'added_ids': added_ids,
                 'duplicates': duplicates, 'unknown': unknown}
     finally:
         if should_close:
@@ -384,9 +386,14 @@ def _acquire_lock(lock_path: Path) -> None:
 def run_campaign(campaign_tag: str, conn: Optional[sqlite3.Connection] = None,
                  max_runs: Optional[int] = None, run_timeout: int = DEFAULT_RUN_TIMEOUT,
                  runs_dir: Optional[Path] = None, invoke=None,
-                 no_wait: bool = False, max_attempts: int = DEFAULT_MAX_ATTEMPTS) -> dict:
+                 no_wait: bool = False, max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+                 reporter=None) -> dict:
     """Work through runnable items serially, waiting out usage-limit resets and
-    resuming cut-off sessions; returns final status counts."""
+    resuming cut-off sessions; returns final status counts.
+
+    reporter: optional zero-arg callable invoked after each item (best-effort)
+    to publish run facts, e.g. to the git ledger. Failures never stop the run.
+    """
     should_close = False
     if conn is None:
         conn = _get_connection()
@@ -449,6 +456,12 @@ def run_campaign(campaign_tag: str, conn: Optional[sqlite3.Connection] = None,
                 _apply_outcome(conn, item['item_id'], outcome)
                 executed += 1
                 logger.info(f"[{campaign_tag}] Vuln {item['vuln_id']} -> {outcome['status']}")
+
+                if reporter is not None:
+                    try:
+                        reporter()
+                    except Exception as e:
+                        logger.warning(f'Ledger report failed (campaign continues): {e}')
 
             counts = _status_counts(conn, campaign['campaign_id'])
             logger.info(f"[{campaign_tag}] Session done ({executed} run(s)). "
@@ -547,7 +560,23 @@ def list_campaigns(conn: Optional[sqlite3.Connection] = None) -> list[dict]:
 # ----- CLI -----
 
 def cmd_enqueue(args):
-    if args.ids_file:
+    ledger_dir = args.ledger_dir or ledger.default_ledger_dir()
+    if args.fill_gaps is not None:
+        if not args.experiment_tag:
+            raise ValueError('--experiment-tag is required with --fill-gaps.')
+        if not ledger_dir:
+            raise ValueError('--fill-gaps needs a ledger: pass --ledger-dir or set '
+                             f'{ledger.LEDGER_DIR_ENV}.')
+        ids = ledger.gap_fill_ids(DB_PATH, ledger_dir, args.experiment_tag,
+                                  count=args.fill_gaps, projects=args.project,
+                                  id_min=args.id_min, id_max=args.id_max,
+                                  reproduced_only=args.reproduced_only,
+                                  retry_failed=args.retry_failed, seed=args.seed)
+        if not ids:
+            logger.info('No coverage gaps match the filters; nothing to enqueue.')
+            return
+        logger.info(f'Gap-fill selected {len(ids)} vuln(s): {ids}')
+    elif args.ids_file:
         ids = []
         with open(args.ids_file, 'r', encoding='utf-8') as f:
             for line in f:
@@ -562,12 +591,24 @@ def cmd_enqueue(args):
         'is_loc_mode': args.loc_mode,
         'is_patch_mode': args.patch_mode,
     }
-    enqueue(args.campaign, args.experiment_tag, ids, base_config, append=args.append)
+    summary = enqueue(args.campaign, args.experiment_tag, ids, base_config, append=args.append)
+    if args.fill_gaps is not None and summary['added_ids']:
+        try:
+            ledger.record_claims(ledger_dir, ledger.machine_name(), summary['added_ids'],
+                                 args.experiment_tag, campaign=args.campaign)
+        except Exception as e:
+            logger.warning(f'Failed to record ledger claims (enqueue succeeded): {e}')
 
 
 def cmd_run(args):
+    ledger_dir = args.ledger_dir or ledger.default_ledger_dir()
+    reporter = None
+    if ledger_dir:
+        def reporter():
+            ledger.report_new_runs(db_path=DB_PATH, ledger_dir=ledger_dir)
+        logger.info(f'Ledger reporting enabled ({ledger_dir}).')
     run_campaign(args.campaign, max_runs=args.max_runs, run_timeout=args.run_timeout,
-                 no_wait=args.no_wait, max_attempts=args.max_attempts)
+                 no_wait=args.no_wait, max_attempts=args.max_attempts, reporter=reporter)
 
 
 def cmd_status(args):
@@ -615,12 +656,27 @@ def main(argv=None):
     id_group = p_enqueue.add_mutually_exclusive_group(required=True)
     id_group.add_argument('--ids', nargs='+', type=int, help='arvo vulnerability ids')
     id_group.add_argument('--ids-file', help='File with one arvo id per line (# comments ok)')
+    id_group.add_argument('--fill-gaps', type=int, metavar='N',
+                          help='Pick up to N unrun vulns for this experiment_tag '
+                               'from the team ledger (see LEDGER.md)')
     p_enqueue.add_argument('--loc-mode', action='store_true')
     p_enqueue.add_argument('--patch-mode', action='store_true')
     p_enqueue.add_argument('--container', default='rootainer')
     p_enqueue.add_argument('--agent', default='claude')
     p_enqueue.add_argument('--append', action='store_true',
                            help='Add ids to an existing campaign')
+    p_enqueue.add_argument('--ledger-dir', default=None,
+                           help=f'Ledger repo path (default: ${ledger.LEDGER_DIR_ENV})')
+    p_enqueue.add_argument('--project', action='append',
+                           help='(--fill-gaps) limit candidates to this project; repeatable')
+    p_enqueue.add_argument('--id-min', type=int, help='(--fill-gaps) minimum arvo id')
+    p_enqueue.add_argument('--id-max', type=int, help='(--fill-gaps) maximum arvo id')
+    p_enqueue.add_argument('--reproduced-only', action='store_true',
+                           help='(--fill-gaps) only vulns with reproduced=1')
+    p_enqueue.add_argument('--retry-failed', action='store_true',
+                           help='(--fill-gaps) include vulns whose only runs failed')
+    p_enqueue.add_argument('--seed', type=int,
+                           help='(--fill-gaps) seed for reproducible sampling')
     p_enqueue.set_defaults(func=cmd_enqueue)
 
     p_run = sub.add_parser('run', help='Run pending items in a campaign')
@@ -634,6 +690,9 @@ def main(argv=None):
     p_run.add_argument('--max-attempts', type=int, default=DEFAULT_MAX_ATTEMPTS,
                        help=f'Give up on an item after this many usage-limited '
                             f'attempts (default {DEFAULT_MAX_ATTEMPTS})')
+    p_run.add_argument('--ledger-dir', default=None,
+                       help=f'Report run facts to this ledger repo after each item '
+                            f'(default: ${ledger.LEDGER_DIR_ENV}; omit both to disable)')
     p_run.set_defaults(func=cmd_run)
 
     p_status = sub.add_parser('status', help='Show campaign progress')
