@@ -121,7 +121,7 @@ Behavior notes:
 
 ```bash
 python run_experiments.py run --campaign <tag> \
-    [--max-runs N] [--run-timeout 5400] [--no-wait] [--max-attempts 2]
+    [--max-runs N] [--run-timeout 5400] [--no-wait] [--max-attempts 4]
 ```
 
 | flag | meaning |
@@ -129,7 +129,7 @@ python run_experiments.py run --campaign <tag> \
 | `--max-runs N` | stop after N caro invocations this session (resumes count) — useful for pacing against the usage budget |
 | `--run-timeout` | per-run timeout in seconds (default 5400 = 1.5 h); a hung run is killed and marked `error` |
 | `--no-wait` | when a usage limit blocks progress, exit instead of sleeping until the reset |
-| `--max-attempts` | give up on an item after this many usage-limited attempts (default 2); it is marked `error` |
+| `--max-attempts` | give up on an item after this many usage-limited attempts (default 4); it is marked `error` |
 
 Each loop iteration decides one of three things:
 

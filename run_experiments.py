@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).parent
 DB_PATH = str(REPO_ROOT / 'arvo_loc_runs.db')
 DEFAULT_RUNS_DIR = REPO_ROOT / 'runs'
 DEFAULT_RUN_TIMEOUT = 5400  # seconds
-DEFAULT_MAX_ATTEMPTS = 2          # usage-limited attempts per item before giving up
+DEFAULT_MAX_ATTEMPTS = 6          # usage-limited attempts per item before giving up
 RESUME_BUFFER_SECONDS = 300       # slack added past the parsed reset time
 FALLBACK_RETRY_SECONDS = 2700     # retry interval when the reset time can't be parsed
 
