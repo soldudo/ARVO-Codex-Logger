@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from arvo_tools import standby_dind, cleanup_dind
+from arvo_tools import standby_dind, cleanup_dind, prune_dind_images
 from queries import get_original_crash_log
 import subprocess
 import time
@@ -103,6 +103,9 @@ def conduct_run(experiment_tag, vuln_id, run_id, container_name, prompt, agent, 
 
     # in case previous run crashed. Handle this better
     cleanup_dind('vulnscan')
+
+    # free disk before the next image is pulled; keeps this vuln's image cached
+    prune_dind_images(vuln_id)
 
     standby_dind(container_name='vulnscan', vuln_id=vuln_id)
 

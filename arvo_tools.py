@@ -136,6 +136,53 @@ def cleanup_dind(container_name: str, rootainer_name: str = 'rootainer'):
     full_cmd = root_cmd + target_cmd
     run_command(full_cmd, check=False)
 
+def prune_dind_images(keep_vuln_id, rootainer_name: str = 'rootainer',
+                      keep_flags=('vul', 'fix')) -> List[str]:
+    """Drop resident n132/arvo images from rootainer's inner docker except the
+    current vuln's, so a long campaign of distinct ids doesn't fill inner storage.
+
+    The current vuln's images are kept so a usage-limit resume (which re-runs the
+    same id) reuses the cached image instead of re-pulling it. Both -vul and -fix
+    are kept: the campaign path only pulls -vul, but get_original/load_container
+    can pull -fix.
+
+    Assumes runs are serial (the runner's lockfile allows one campaign at a time).
+    A manually launched concurrent run could make this target an in-use image;
+    docker refuses to remove those, so the worst case is a logged warning.
+
+    Best-effort, like cleanup_dind: docker failures are logged, never raised.
+    Returns the tags actually removed.
+    """
+    root_cmd = ['docker', 'exec', rootainer_name]
+    list_cmd = ['docker', 'images', 'n132/arvo', '--format', '{{.Repository}}:{{.Tag}}']
+    result = run_command(root_cmd + list_cmd, check=False, stdout=subprocess.PIPE)
+
+    if result.returncode != 0:
+        logger.warning(f"Could not list arvo images in {rootainer_name}, skipping prune: "
+                       f"{result.stderr}")
+        return []
+
+    keep = {f'n132/arvo:{keep_vuln_id}-{flag}' for flag in keep_flags}
+    resident = [line.strip() for line in (result.stdout or '').splitlines() if line.strip()]
+    stale = [tag for tag in resident if tag not in keep]
+
+    if not stale:
+        logger.debug(f"No stale arvo images to prune in {rootainer_name} "
+                     f"(resident: {resident or 'none'})")
+        return []
+
+    logger.info(f"Pruning {len(stale)} stale arvo image(s) from {rootainer_name}, "
+                f"keeping vuln {keep_vuln_id}: {stale}")
+    removed = []
+    for tag in stale:
+        rmi_result = run_command(root_cmd + ['docker', 'rmi', '-f', tag], check=False)
+        if rmi_result.returncode == 0:
+            removed.append(tag)
+        else:
+            logger.warning(f"Failed to remove image {tag} from {rootainer_name}: "
+                           f"{rmi_result.stderr}")
+    return removed
+
 
 def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
     stby_cmd = ['docker', 'run', '-d',
