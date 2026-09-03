@@ -137,6 +137,8 @@ if __name__ == "__main__":
 
     # localization mode
     if is_loc_mode:
+        loc_is_resume = is_resume
+        loc_resume_id = resume_id
         # if valid localization context fetched, we use that instead of generating new one
         if loc_context is not None:
             logger.info(f'Localization context fetched from DB from provided loc_run_id. Skipping localization run. (Remove loc_run_id from experiment_setup.json to ensure new localization run generates.')
@@ -153,6 +155,7 @@ if __name__ == "__main__":
                 prompt = 'continue where you left off'
                 # ensure any subsequent patching run doesn't try to continue the used resume session
                 is_resume = False
+                resume_id = None
 
             current_loc_run_id = run_id + '-loc'
 
@@ -164,8 +167,8 @@ if __name__ == "__main__":
                 "prompt": prompt,
                 "agent": agent,
                 "run_mode": 'loc',
-                "is_resume": is_resume,
-                "resume_session_id": resume_id,
+                "is_resume": loc_is_resume,
+                "resume_session_id": loc_resume_id,
             }
 
             logger.info('Conducting localization run')
