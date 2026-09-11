@@ -4,6 +4,7 @@ import re
 import sqlite3
 from pathlib import Path
 from queries import _get_experiment_id_by_tag
+from schema import PATCH_VERIFICATION_DDL, PATCH_VERIFICATION_INDEX_DDL
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ def init_db():
             patch_crash_log TEXT,
             compile_errors TEXT
         )''')
+
+        # table for patch verification attempts (diff_tools.py)
+        cursor.execute(PATCH_VERIFICATION_DDL)
+        cursor.execute(PATCH_VERIFICATION_INDEX_DDL)
 
         conn.commit()
     finally:

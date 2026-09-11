@@ -430,6 +430,111 @@ def update_run_experiment_by_tag(run_id: str, experiment_tag: str, conn: Optiona
 def update_patch_crash_results(run_id: str, is_crash_resolved: bool, patch_crash_log: str, compile_errors: str, conn: Optional[sqlite3.Connection] = None):
     return _update_patch_data(run_id, {'is_crash_resolved': is_crash_resolved, 'patch_crash_log': patch_crash_log, 'compile_errors': compile_errors}, conn)
 
+
+# --- patch_verification -----------------------------------------------------
+# One row per verification attempt. Unlike _update_patch_data, which is
+# UPDATE-only and relies on run_parser.py pre-creating every patch_data row,
+# these own their INSERT.
+
+def start_patch_verification(run_id: str, conn: Optional[sqlite3.Connection] = None,
+                             **provenance) -> Optional[int]:
+    """Open a verification attempt and return its verification_id.
+
+    attempt is MAX(attempt)+1 for the run, so re-verifying never overwrites an
+    earlier verdict. Accepts any patch_verification column as a keyword.
+    """
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+
+    try:
+        row = conn.execute(
+            'SELECT COALESCE(MAX(attempt), 0) + 1 FROM patch_verification WHERE run_id = ?',
+            (run_id,)).fetchone()
+        attempt = row[0] if row else 1
+
+        cols = ['run_id', 'attempt'] + list(provenance.keys())
+        vals = [run_id, attempt] + list(provenance.values())
+        placeholders = ', '.join('?' for _ in cols)
+        cursor = conn.execute(
+            f'INSERT INTO patch_verification ({", ".join(cols)}) VALUES ({placeholders})',
+            vals)
+        conn.commit()
+        logger.info(f'Opened verification attempt {attempt} for {run_id} '
+                    f'(verification_id={cursor.lastrowid})')
+        return cursor.lastrowid
+
+    except sqlite3.Error as e:
+        logger.error(f'DB error opening verification for {run_id}: {e}')
+        conn.rollback()
+        return None
+    finally:
+        if should_close:
+            conn.close()
+
+
+def update_patch_verification(verification_id: int, updates: Dict[str, Any],
+                              conn: Optional[sqlite3.Connection] = None) -> bool:
+    """Write one stage's results. Called after each stage so a run that dies
+    part-way still leaves the stages that completed."""
+    if not updates:
+        logger.warning(f'No verification data provided for {verification_id}')
+        return False
+
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+
+    try:
+        set_clause = ', '.join(f'{col} = ?' for col in updates.keys())
+        values = list(updates.values()) + [verification_id]
+        cursor = conn.execute(
+            f'UPDATE patch_verification SET {set_clause} WHERE verification_id = ?',
+            values)
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            logger.warning(f'No verification row found for id {verification_id}')
+            return False
+        return True
+
+    except sqlite3.Error as e:
+        logger.error(f'DB error updating verification {verification_id}. '
+                     f'Columns: {list(updates)}. Error: {e}')
+        conn.rollback()
+        return False
+    finally:
+        if should_close:
+            conn.close()
+
+
+def get_patch_verification(run_id: str, attempt: Optional[int] = None,
+                           conn: Optional[sqlite3.Connection] = None):
+    """Latest attempt for a run, or a specific one. Returns sqlite3.Row."""
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+
+    try:
+        conn.row_factory = sqlite3.Row
+        if attempt is None:
+            return conn.execute(
+                'SELECT * FROM patch_verification WHERE run_id = ? '
+                'ORDER BY attempt DESC LIMIT 1', (run_id,)).fetchone()
+        return conn.execute(
+            'SELECT * FROM patch_verification WHERE run_id = ? AND attempt = ?',
+            (run_id, attempt)).fetchone()
+    except sqlite3.Error as e:
+        logger.error(f'DB error reading verification for {run_id}: {e}')
+        return None
+    finally:
+        if should_close:
+            conn.close()
+
+
 def update_agent_log(run_id: str, agent_log_path: str):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
