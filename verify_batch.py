@@ -48,9 +48,18 @@ INFRA_PATTERNS = re.compile(
     r'device or resource busy|Out of memory|Killed|'
     r'failed to register layer|no such host', re.I)
 
+# ARVO's own build.sh re-applying its harness patch to an image that already has
+# it. The build aborts under `set -e` before compiling anything, so the failure
+# belongs to the image, not to the agent's patch or to this machine.
+HARNESS_PATTERNS = re.compile(
+    r'already exists in working directory|'
+    r'git apply .*\n.*error: patch failed', re.I)
+
 # Outcomes that are results, not faults. A patch that does not apply is a real
-# experimental outcome and must not stop the batch.
-RESULT_OUTCOMES = {'artifacts_ready', 'patch_failed', 'compile_failed', 'poc_timeout'}
+# experimental outcome and must not stop the batch. harness_build_failed is a
+# property of the arvo image, so it must not stop the batch either.
+RESULT_OUTCOMES = {'artifacts_ready', 'patch_failed', 'compile_failed',
+                   'poc_timeout', 'harness_build_failed'}
 
 
 # --- lock -------------------------------------------------------------------
@@ -185,6 +194,13 @@ def classify(conn, run_id: str, timed_out: bool) -> tuple:
     if compile_to == 1:
         return 'compile_failed', False
     if compile_rc is not None and compile_rc != 0:
+        # A real "this patch does not build" takes minutes and leaves a large log
+        # full of error: lines. A sub-second, tiny-log failure is the build
+        # itself refusing to start -- for geos, ARVO's own build.sh re-applying
+        # its harness patch over an image that already has it. That is neither
+        # the patch's fault nor a machine fault, and it is unfixable by retrying.
+        if HARNESS_PATTERNS.search(extract or ''):
+            return 'harness_build_failed', False
         # Distinguish "this patch does not build" from "the machine is broken".
         infra = bool(INFRA_PATTERNS.search(extract or ''))
         return ('infra_failed' if infra else 'compile_failed'), infra

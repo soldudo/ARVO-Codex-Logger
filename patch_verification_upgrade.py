@@ -29,6 +29,11 @@ DB_PATH = 'arvo_loc_runs.db'
 # PATCH_VERIFICATION_DDL already has them.
 ADDED_COLUMNS = {
     'transcript_path': 'TEXT',
+    # Phase 3 adjudication: the outcome is three-way, and the tokens are the
+    # evidence the verdict rested on.
+    'crash_outcome': 'TEXT',          # clean | same_crash | different_crash | undetermined
+    'baseline_dedup_token': 'TEXT',
+    'poc_dedup_token': 'TEXT',
 }
 
 
@@ -52,6 +57,13 @@ def backfill(conn: sqlite3.Connection, dry_run: bool = False) -> int:
     patch_data.patch_crash_log holds stdout and stderr concatenated, so it maps
     to poc_stdout with poc_stderr left NULL. compile_errors held stderr only.
 
+    The guard is "no patch_verification row at all", not "no attempt=0 row". An
+    interactive adjudication mirrors its verdict into patch_data, so guarding
+    only on attempt=0 made a later migration manufacture a fake pre-capture row
+    for a run that already had full capture. Three such rows exist in production
+    from before this fix; they are harmless (every query filters on attempt > 0)
+    but they mislabel captured verdicts as legacy.
+
     A database with no patch_data table is a fresh one with nothing to carry
     over, so that is a skip rather than an error.
     """
@@ -69,7 +81,7 @@ def backfill(conn: sqlite3.Connection, dry_run: bool = False) -> int:
         LEFT JOIN arvo a ON a.localId = r.vuln_id
         WHERE p.is_crash_resolved IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM patch_verification v
-                          WHERE v.run_id = p.run_id AND v.attempt = 0)
+                          WHERE v.run_id = p.run_id)
     ''').fetchall()
 
     if not rows:

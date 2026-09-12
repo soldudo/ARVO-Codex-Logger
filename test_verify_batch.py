@@ -350,5 +350,45 @@ def test_completed_runs_are_skipped_on_resume(conn, monkeypatch):
     assert counts['skipped'] == 1
 
 
+# --- harness build failures -------------------------------------------------
+
+GEOS_EXTRACT = """[capture] 15 lines, 1048 bytes total
++ git apply ../patch.diff
+error: patch failed: tests/CMakeLists.txt:10
+error: tests/CMakeLists.txt: patch does not apply
+error: tests/fuzz/CMakeLists.txt: already exists in working directory
+error: tests/fuzz/fuzz_geo2.c: already exists in working directory"""
+
+
+def test_harness_build_failure_is_not_a_compile_failure(conn):
+    """ARVO's own build.sh re-applying its harness patch. Not the agent's patch,
+    not a machine fault, and not fixable by retrying."""
+    add_patch_run(conn, 'r1')
+    add_attempt(conn, 'r1', patch_rc=0, compile_rc=1, compile_duration_s=0.1,
+                compile_output_extract=GEOS_EXTRACT)
+    assert classify(conn, 'r1', False) == ('harness_build_failed', False)
+
+
+def test_harness_build_failure_does_not_trip_the_breaker(conn):
+    """It is a property of one image, so aborting the whole batch is wrong."""
+    from verify_batch import RESULT_OUTCOMES
+    assert 'harness_build_failed' in RESULT_OUTCOMES
+
+
+def test_a_real_compile_failure_is_still_a_compile_failure(conn):
+    add_patch_run(conn, 'r1')
+    add_attempt(conn, 'r1', patch_rc=0, compile_rc=1, compile_duration_s=1400.0,
+                compile_output_extract='mjpegdec.c:399: error: undeclared identifier bw')
+    assert classify(conn, 'r1', False) == ('compile_failed', False)
+
+
+def test_disk_full_still_outranks_nothing(conn):
+    """A disk-full compile failure has no harness markers, so it stays infra."""
+    add_patch_run(conn, 'r1')
+    add_attempt(conn, 'r1', patch_rc=0, compile_rc=1, compile_duration_s=900.0,
+                compile_output_extract='cc: No space left on device')
+    assert classify(conn, 'r1', False) == ('infra_failed', True)
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))

@@ -64,9 +64,14 @@ CREATE TABLE IF NOT EXISTS patch_verification (
     poc_duration_s    REAL,
     poc_timed_out     INTEGER,
 
-    -- adjudication
+    -- adjudication. crash_outcome carries the distinction is_crash_resolved
+    -- cannot: the reported bug gone but the POC still crashing somewhere new.
+    -- The dedup tokens are the evidence the outcome was derived from.
     is_crash_resolved BOOLEAN,
-    adjudicated_by    TEXT,
+    crash_outcome     TEXT,      -- clean | same_crash | different_crash | undetermined
+    baseline_dedup_token TEXT,
+    poc_dedup_token   TEXT,
+    adjudicated_by    TEXT,      -- a username, or 'auto:<rule version>'
     adjudicated_at    TEXT,
     adjudication_note TEXT,
 

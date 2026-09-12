@@ -1,9 +1,15 @@
 # Batch Patch Verification — Phased Proposal
 
-> **Status:** Proposed. Nothing implemented. The diff_tools facts below are read
-> from the current implementation; every count is queried from `arvo_loc_runs.db`
-> and reconciled against `RUN_DATA_MAP.md`. The Phase 1 batch is written to
-> `phase1_batch.txt`.
+> **Status (2026-09-12):** **Phase 1 implemented and running** on the server — 39
+> of 98 attempts captured, 0 malformed patches, 0 timeouts. **Phase 3
+> implemented** and validated against those 39 (20 auto-confirmable, 16 queued
+> for review); it reads only the database, so it runs while the batch continues.
+> **Phase 2** not started.
+>
+> Both in-flight defects are now fixed: `harness_build_failed` is a distinct
+> outcome, and the backfill guard is `NOT EXISTS (any attempt)`. The classifier
+> fix needs a `verify_batch.py` restart to take effect; it was log-only, so no
+> captured data is affected.
 
 Three phases. **Phase 1** runs a fixed list of patch runs through `diff_tools.py`
 unattended, capturing every artifact and entering **no verdict**. **Phase 2** narrows
@@ -502,41 +508,148 @@ moving parts, and it changes what is tested, so it needs the same scrutiny.
 
 # Phase 3 — `adjudicate.py`
 
-The asynchronous review pass over Phase 1's artifacts. Walks attempts with
-artifacts and no verdict:
+> Redesigned against real captured data (36 attempts, 2026-09-12). The original
+> sketch walked every run one at a time and recorded a boolean. Both turn out to
+> be wrong: the outcome is three-way, and roughly half the runs need no human
+> judgement at all.
 
-```sql
-SELECT * FROM patch_verification
-WHERE attempt > 0 AND is_crash_resolved IS NULL AND poc_rc IS NOT NULL
-ORDER BY run_id, attempt
+## What the captured POC outputs actually show
+
+32 runs with a POC result:
+
+| outcome | n | |
+|---|---|---|
+| **clean** | 22 | POC ran, no sanitizer report |
+| **same crash** | 8 | identical `DEDUP_TOKEN` to the baseline |
+| **different crash** | 2 | a sanitizer report, but not the one the baseline had |
+
+### `poc_rc` is a perfect discriminator, but only two-way
+
+`poc_rc = 0` → clean in **22 of 22**. `poc_rc = 1` → a crash in **10 of 10**. It
+does not distinguish the same crash from a new one, which is the distinction that
+decides whether a patch fixed the reported bug.
+
+### `DEDUP_TOKEN` is the three-way discriminator, with full coverage
+
+Present in **32 of 32** baselines and **10 of 10** crashing POC outputs. It names
+the top stack frames rather than addresses, so it is stable across executions —
+the ASAN nondeterminism problem (addresses, pids, thread ids) does not touch it.
+
+The two different-crash runs, which a crash-type comparison would have missed
+because the sanitizer class is identical in both:
+
+```
+arvo-42532853-vul-1775455728-patch   PcapPlusPlus
+  baseline  heap-buffer-overflow  Common++/header/IpAddress.h:204:42
+  patched   heap-buffer-overflow  Packet++/header/NdpLayer.h:72:26
+
+arvo-42536326-vul-1784850070-patch   ffmpeg
+  baseline  stack-buffer-overflow libavcodec/hevc/mvs.c:466:51 derive_spatial_merge_candidates
+  patched   stack-buffer-overflow libavcodec/hevc/mvs.c:511:35 ff_hevc_luma_mv_merge_mode
 ```
 
-For each: prints the baseline log, the patched POC output, `compile_rc`,
-`patch_max_fuzz` and `patch_recounted`, then takes `[s]uccess` / `[u]nsuccessful` /
-`[k]ip` / `[q]uit` plus an optional note. Writes exactly what interactive
-`diff_tools.py` writes — `is_crash_resolved`, `adjudicated_by`, `adjudicated_at`,
-`adjudication_note` — and mirrors to `patch_data` so the `analysis/` scripts keep
-working.
+The second is the interesting shape: the patch removed the overflow at `mvs.c:466`
+and the POC now overflows at `mvs.c:511` in the caller. Whether that counts as
+"resolved" is a judgement a human has to make, and a boolean cannot record it.
 
-Two flags it must surface per run, because they decide whether a verdict means
-anything:
+### Output size corroborates, "Execution successful" does not
 
-- `compile_rc != 0` — the POC ran against a stale build. Should be unreachable,
-  since `diff_tools.py` stops before the POC in that case, but assert rather than
-  assume.
-- `patch_max_fuzz > 0` — that many context lines were discarded, so the patch may
-  have landed slightly off. A verdict here is weaker than one at fuzz 0.
+Clean outputs are 54-585 bytes, crashing ones 3,854-8,960 — no overlap. But the
+literal `Execution successful` marker appears in only **4 of 22** clean runs, so it
+must not be used as the clean test. Size and `poc_rc` agree on every run.
 
-`--run-id` adjudicates one run; `--limit N` caps a session. No container and no
-docker, so review happens anywhere the database is.
+## Change 3.1 — record the three-way outcome
 
-This is also where the LLM compile-verification pass fits: it can populate
-`compile_verified` over Phase 1's artifacts independently, before or alongside human
-adjudication, and `adjudicate.py` can then show its judgement as an input rather
-than a substitute.
+`is_crash_resolved BOOLEAN` cannot express "the reported bug is gone but the POC
+still crashes". Add one column alongside it:
 
-Until Phase 3 lands, `RUN_DATA_MAP.md` Class 7 stays open — Phase 1 produces
-evidence, not verdicts, which is the stated intent.
+```sql
+ALTER TABLE patch_verification ADD COLUMN crash_outcome TEXT;
+    -- 'clean' | 'same_crash' | 'different_crash' | 'undetermined'
+```
+
+`is_crash_resolved` stays the headline boolean so `analysis/patch_eval.py` and
+`analysis/command_analysis.py` keep working unchanged. `crash_outcome` carries the
+distinction they cannot. Lands in `patch_verification_upgrade.py`'s existing
+`ADDED_COLUMNS` dict, so it is one line and idempotent.
+
+Two derived fields are worth storing with it, since they are what the verdict was
+actually based on and are expensive to recompute later:
+
+```sql
+    baseline_dedup_token TEXT,
+    poc_dedup_token      TEXT,
+```
+
+## Change 3.2 — propose, then review by exception
+
+Walking 98 runs one at a time is the wrong shape when the signals agree on most of
+them. Measured over the 36 captured attempts:
+
+| | n | share |
+|---|---|---|
+| auto-confirmable (signals agree, fuzz 0) | 20 | 55% |
+| needs human eyes | 16 | 44% |
+
+Extrapolated to the full batch: **~54 auto-confirmable, ~44 to review**.
+
+What lands in the review queue, and why:
+
+| reason | n so far |
+|---|---|
+| patch never applied — no POC to judge | 4 |
+| clean, but applied at fuzz 1 | 4 |
+| harness build broken (ARVO `build.sh`) | 3 |
+| clean, but applied at fuzz 2 | 2 |
+| **different crash — judgement call** | 2 |
+| same crash, but applied at fuzz 2 | 1 |
+
+Fuzz is the dominant reason. A hunk applied at fuzz 2 had that much context
+discarded, so even a clean POC does not prove the patch landed where the agent
+intended — the verdict is about a tree that may not match the diff. Those need a
+look at the transcript's patch section, not a rubber stamp.
+
+### CLI
+
+```bash
+python adjudicate.py --review          # only the exception queue, one at a time
+python adjudicate.py --auto            # confirm the unambiguous ones in bulk
+python adjudicate.py --run-id <id>     # a single run
+python adjudicate.py --status          # counts by proposed outcome
+```
+
+`--auto` writes `crash_outcome` and `is_crash_resolved` for runs where `poc_rc`,
+output size and the token comparison all agree **and** `patch_max_fuzz = 0`,
+recording `adjudicated_by = 'auto:<rule-version>'` so an automatic verdict is
+always distinguishable from a human one and can be revisited wholesale.
+
+`--review` shows, per run: the proposed outcome and why, `patch_max_fuzz` /
+`patch_recounted`, the two dedup tokens side by side, both SUMMARY lines, and the
+patch section of the transcript when fuzz > 0. Then `[a]ccept / [s]uccess /
+[u]nsuccessful / [k]ip / [q]uit` plus a note.
+
+Both paths write the same four adjudication fields and mirror to `patch_data`.
+
+## Change 3.3 — the LLM compile check stays separate
+
+`compile_verified` remains for the model's judgement on whether the build is
+trustworthy, written from the compile log and transcript. It is a different claim
+from `compile_rc = 0` and from the crash outcome, and `adjudicate.py` should
+display it when present rather than compute it.
+
+Note the ordering that falls out of the data: every captured run so far has
+`compile_rc = 0` except the three geos ones, whose compile never started. So the
+LLM pass has little to disagree with yet — its value will show on runs where the
+build half-succeeds, which none of the first 36 did.
+
+## Files
+
+| file | change |
+|---|---|
+| `adjudicate.py` | new |
+| `patch_verification_upgrade.py` | 3 entries in `ADDED_COLUMNS` |
+| `schema.py` | same 3 columns in the DDL |
+| `test_adjudicate.py` | new — proposal rules and the exception triage |
 
 ---
 
