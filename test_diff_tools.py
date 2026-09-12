@@ -248,5 +248,105 @@ def test_handles_empty_output():
     assert parse_patch_output(None)['max_fuzz'] == 0
 
 
+# --- artifact paths and transcript ------------------------------------------
+
+def test_artifact_paths_carry_the_run_id():
+    """Filenames must stay traceable once pooled into one directory."""
+    from diff_tools import artifact_paths
+    c, t = artifact_paths('arvo-42540891-vul-1784232900-patch', 1)
+    assert c.name == 'compile_arvo-42540891-vul-1784232900-patch_a1.log'
+    assert t.name == 'verify_arvo-42540891-vul-1784232900-patch_a1.log'
+    assert c.parent.name == 'arvo-42540891-vul-1784232900-patch'
+
+
+def test_artifact_paths_distinguish_attempts():
+    from diff_tools import artifact_paths
+    a1, _ = artifact_paths('r', 1)
+    a2, _ = artifact_paths('r', 2)
+    assert a1 != a2 and a2.name.endswith('_a2.log')
+
+
+def _meta(**over):
+    m = {'run_id': 'r1', 'vuln_id': 42, 'project': 'ffmpeg',
+         'fuzz_target': 'ffmpeg_X_fuzzer', 'crash_type': 'Heap-buffer-overflow',
+         'attempt': 1, 'started_at': 'T0', 'finished_at': 'T1',
+         'image_tag': 'n132/arvo:42-vul', 'applier_sha256': 'abc123',
+         'container_workdir': '/src/ffmpeg', 'stopped_after': 'complete',
+         'compile_log_file': 'compile_r1_a1.log',
+         'baseline_source': 'arvo.crash_output',
+         'baseline_log': 'BASELINE-ASAN-REPORT'}
+    m.update(over)
+    return m
+
+
+APPLIED = {'patch_rc': 0, 'patch_strip': 1, 'patch_recounted': 2,
+           'patch_hunks_ok': 3, 'patch_hunks_failed': 0, 'patch_max_fuzz': 0,
+           'patch_stdout': 'PATCH-STDOUT', 'patch_stderr': None}
+COMPILED = {'compile_rc': 0, 'compile_duration_s': 932.0, 'compile_timed_out': 0,
+            'compile_log_bytes': 1955662, 'compile_output_extract': 'EXTRACT'}
+POC = {'poc_rc': 0, 'poc_stdout': 'POC-STDOUT', 'poc_stderr': 'POC-STDERR',
+       'poc_duration_s': 1.4, 'poc_timed_out': 0}
+
+
+def test_transcript_has_all_three_sections(tmp_path):
+    from diff_tools import write_transcript
+    p = write_transcript(tmp_path / 't.log', _meta(), APPLIED, COMPILED, POC)
+    text = p.read_text(encoding='utf-8')
+    assert 'BASELINE-ASAN-REPORT' in text
+    assert 'PATCH-STDOUT' in text
+    assert 'POC-STDOUT' in text and 'POC-STDERR' in text
+    assert '1. BASELINE POC OUTPUT' in text
+    assert '2. PATCH APPLICATION' in text
+    assert '3. PATCHED POC OUTPUT' in text
+
+
+def test_transcript_carries_no_compile_output(tmp_path):
+    """The full compile log is a separate artifact fed whole; duplicating an
+    abridged copy would waste context and invite reasoning from the short one."""
+    from diff_tools import write_transcript
+    p = write_transcript(tmp_path / 't.log', _meta(), APPLIED, COMPILED, POC)
+    text = p.read_text(encoding='utf-8')
+    assert 'EXTRACT' not in text
+    assert 'compile_r1_a1.log' in text          # cross-referenced by name instead
+
+
+def test_transcript_scalars_are_machine_readable(tmp_path):
+    from diff_tools import write_transcript
+    p = write_transcript(tmp_path / 't.log', _meta(), APPLIED, COMPILED, POC)
+    text = p.read_text(encoding='utf-8')
+    for token in ('patch_rc 0', 'patch_max_fuzz 0', 'compile_rc 0', 'poc_rc 0',
+                  'patch_recounted 2'):
+        assert token in text
+
+
+def test_transcript_written_when_patch_failed(tmp_path):
+    """The stage that stopped the run is exactly the one a reviewer needs."""
+    from diff_tools import write_transcript
+    failed = dict(APPLIED, patch_rc=1, patch_hunks_failed=2,
+                  patch_stdout='Hunk #1 FAILED at 98.')
+    p = write_transcript(tmp_path / 't.log', _meta(stopped_after='patch_failed'),
+                         failed, None, None)
+    text = p.read_text(encoding='utf-8')
+    assert 'stopped_after' in text and 'patch_failed' in text
+    assert 'Hunk #1 FAILED' in text
+    assert 'BASELINE-ASAN-REPORT' in text
+    assert '(none)' in text                     # empty POC section
+
+
+def test_transcript_written_with_nothing_but_the_baseline(tmp_path):
+    from diff_tools import write_transcript
+    p = write_transcript(tmp_path / 't.log', _meta(stopped_after='error'),
+                         None, None, None)
+    text = p.read_text(encoding='utf-8')
+    assert 'BASELINE-ASAN-REPORT' in text
+    assert text.rstrip().endswith('=== END ===')
+
+
+def test_transcript_creates_missing_directories(tmp_path):
+    from diff_tools import write_transcript
+    p = write_transcript(tmp_path / 'a' / 'b' / 't.log', _meta(), APPLIED, COMPILED, POC)
+    assert p.exists()
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))

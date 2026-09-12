@@ -22,15 +22,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from arvo_tools import run_command, standby_container, cleanup_container
-from queries import (get_vuln_id, get_result_json, get_context,
+from queries import (get_vuln_id, get_result_json, get_context, get_fuzz_target,
                      get_original_crash_log, update_patch_crash_results,
                      start_patch_verification, update_patch_verification)
 
 logger = logging.getLogger(__name__)
 
 # No call in the previous implementation passed a timeout, which is why a slow
-# ffmpeg rebuild read as a hang. A full arvo compile links every decoder fuzzer
-# in the project (435 for ffmpeg), measured at ~30 min.
+# ffmpeg rebuild read as a hang. A full arvo compile walks every decoder fuzzer
+# in the project (435 for ffmpeg): measured at 930-932 s over two runs, so 3600
+# leaves ~3.9x headroom. POC_TIMEOUT mirrors arvo_tools.refuzz's 60 s with slack.
 PULL_TIMEOUT = 1800
 COMPILE_TIMEOUT = 3600
 POC_TIMEOUT = 120
@@ -419,6 +420,82 @@ def stream_compile(container_name: str, log_path: Path, timeout: int = COMPILE_T
     }
 
 
+def artifact_paths(run_id: str, attempt: int):
+    """Per-attempt artifact paths.
+
+    The run id is in the filename, not only the directory, because these get
+    pooled into one directory to hand to the LLM pass and `compile_1.log` is
+    untraceable once moved. Keyed on attempt rather than verification_id because
+    (run_id, attempt) is already the table's UNIQUE key, so the filename is a
+    complete join key back to the row.
+    """
+    d = RUNS_DIR / run_id
+    return (d / f'compile_{run_id}_a{attempt}.log',
+            d / f'verify_{run_id}_a{attempt}.log')
+
+
+def write_transcript(path: Path, meta: dict, applied=None, compiled=None, poc=None):
+    """Assemble the baseline / patch / patched-POC transcript for the LLM pass.
+
+    Carries no compile output: the full compile log is a separate artifact fed
+    whole, and duplicating an abridged copy here would waste context and invite
+    reasoning from the shorter one. The header names the compile file instead.
+
+    Written at every exit path, so a run that stopped at a failed apply still
+    produces the one artifact that describes what happened.
+    """
+    def block(title, body):
+        return f'\n--- {title} ---\n{body if body else "(none)"}\n'
+
+    out = ['=== CARO PATCH VERIFICATION TRANSCRIPT ===']
+    for k in ('run_id', 'vuln_id', 'project', 'fuzz_target', 'crash_type', 'attempt',
+              'started_at', 'finished_at', 'image_tag', 'applier_sha256',
+              'container_workdir', 'stopped_after', 'compile_log_file'):
+        out.append(f'{k:<18}{meta.get(k, "")}')
+
+    scalars = []
+    if applied:
+        scalars.append('patch_rc {patch_rc}   patch_strip {patch_strip}   '
+                       'patch_recounted {patch_recounted}'.format(**applied))
+        scalars.append('patch_hunks_ok {patch_hunks_ok}   '
+                       'patch_hunks_failed {patch_hunks_failed}   '
+                       'patch_max_fuzz {patch_max_fuzz}'.format(**applied))
+    if compiled:
+        scalars.append('compile_rc {compile_rc}   compile_duration_s {compile_duration_s}   '
+                       'compile_timed_out {compile_timed_out}   '
+                       'compile_log_bytes {compile_log_bytes}'.format(**compiled))
+    if poc:
+        scalars.append('poc_rc {poc_rc}   poc_duration_s {poc_duration_s}   '
+                       'poc_timed_out {poc_timed_out}'.format(**poc))
+    out.append(block('SCALARS', '\n'.join(scalars)))
+
+    out.append(block('1. BASELINE POC OUTPUT (unpatched)',
+                     f'source: {meta.get("baseline_source")}\n\n'
+                     + (meta.get('baseline_log') or '')))
+
+    patch_body = ''
+    if applied:
+        patch_body = applied.get('patch_stdout') or ''
+        if applied.get('patch_stderr'):
+            patch_body += '\n--- stderr ---\n' + applied['patch_stderr']
+    out.append(block('2. PATCH APPLICATION', patch_body))
+
+    poc_body = ''
+    if poc:
+        poc_body = ('--- stdout ---\n' + (poc.get('poc_stdout') or '')
+                    + '\n--- stderr ---\n' + (poc.get('poc_stderr') or ''))
+    out.append(block('3. PATCHED POC OUTPUT', poc_body))
+
+    out.append('\n=== END ===\n')
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = '\n'.join(out)
+    with open(path, 'w', encoding='utf-8', errors='replace') as f:
+        f.write(text)
+    logger.info(f'Transcript written to {path} ({len(text.encode("utf-8"))} bytes)')
+    return path
+
+
 def run_poc(container_name: str, timeout: int = POC_TIMEOUT):
     """Re-run the POC against the patched build. Small enough to capture with a
     plain run(), so stdout and stderr stay separate -- the fuzzer banner goes to
@@ -499,6 +576,9 @@ def main(argv=None) -> int:
                         help='Unique identifier for the specific patch run to write and test.')
     parser.add_argument('--compile-timeout', type=int, default=COMPILE_TIMEOUT)
     parser.add_argument('--poc-timeout', type=int, default=POC_TIMEOUT)
+    parser.add_argument('--no-adjudicate', action='store_true',
+                        help='capture artifacts and exit without prompting for a '
+                             'verdict; adjudicate later from patch_verification')
     args = parser.parse_args(argv)
 
     patch_run_id = args.patch_run_id
@@ -513,9 +593,21 @@ def main(argv=None) -> int:
     project, crash_type, _ = get_context(vuln_id)
     baseline_log = get_original_crash_log(vuln_id)
     image_tag = f'n132/arvo:{vuln_id}-vul'
+    applier_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:16]
 
-    applier_sha = hashlib.sha256(
-        Path(__file__).read_bytes()).hexdigest()[:16]
+    meta = {
+        'run_id': patch_run_id,
+        'vuln_id': vuln_id,
+        'project': project,
+        'fuzz_target': get_fuzz_target(vuln_id),
+        'crash_type': crash_type,
+        'image_tag': image_tag,
+        'applier_sha256': applier_sha,
+        'started_at': _now(),
+        'baseline_source': 'arvo.crash_output',
+        'baseline_log': baseline_log,
+        'stopped_after': 'init',
+    }
 
     logger.info(f'Starting patch verification for {patch_run_id}')
     logger.info(f'  vuln {vuln_id}  project={project}  crash_type={crash_type}')
@@ -523,7 +615,10 @@ def main(argv=None) -> int:
     logger.info(f'  timeouts: pull {PULL_TIMEOUT}s  compile {args.compile_timeout}s  '
                 f'poc {args.poc_timeout}s')
 
-    verification_id = None
+    verification_id = attempt = None
+    transcript_path = None
+    applied = compiled = poc = None
+
     try:
         result_json = json.loads(get_result_json(patch_run_id)[0])
         patches = result_json.get('patches', [])
@@ -532,14 +627,15 @@ def main(argv=None) -> int:
             return 1
 
         logger.info(f'Starting standby container {container_name}')
-        standby_container(container_name, vuln_id)
+        standby_container(container_name, vuln_id, timeout=PULL_TIMEOUT)
         workdir = run_command(['pwd'], container_name=container_name,
                               stdout=subprocess.PIPE).stdout.strip()
         logger.info(f'arvo container working directory: {workdir}')
+        meta['container_workdir'] = workdir
 
-        verification_id = start_patch_verification(
+        verification_id, attempt = start_patch_verification(
             patch_run_id,
-            started_at=_now(),
+            started_at=meta['started_at'],
             applier_sha256=applier_sha,
             image_tag=image_tag,
             container_workdir=workdir,
@@ -550,20 +646,27 @@ def main(argv=None) -> int:
             logger.error('Could not open a verification row; aborting')
             return 1
 
-        logger.info(f'Baseline POC output ({len(baseline_log or "")} chars):\n{baseline_log}')
+        meta['attempt'] = attempt
+        compile_path, transcript_path = artifact_paths(patch_run_id, attempt)
+        meta['compile_log_file'] = compile_path.name
+        update_patch_verification(verification_id,
+                                  {'transcript_path': str(transcript_path)})
+
+        logger.info(f'Baseline POC output ({len(baseline_log or "")} chars)')
 
         # stage 2
         applied = apply_patches(patches, container_name, project, workdir)
         update_patch_verification(verification_id, applied)
 
         if applied['patch_rc'] != 0:
+            meta['stopped_after'] = 'patch_failed'
             logger.error(f"Patch did not apply cleanly (rc={applied['patch_rc']}, "
                          f"{applied['patch_hunks_failed']} hunk(s) failed). "
                          f'Stopping before compile; the attempt is recorded.')
-            update_patch_verification(verification_id, {'finished_at': _now()})
-            print('\n--- Patch Failed ---')
-            print(applied['patch_stdout'])
-            print('--------------------')
+            if not args.no_adjudicate:
+                print('--- Patch Failed ---')
+                print(applied['patch_stdout'])
+                print('--------------------')
             return 1
 
         if applied['patch_max_fuzz']:
@@ -572,24 +675,28 @@ def main(argv=None) -> int:
                            f'patch_max_fuzz.')
 
         # stage 3
-        log_path = RUNS_DIR / patch_run_id / f'compile_{verification_id}.log'
-        compiled = stream_compile(container_name, log_path, args.compile_timeout)
+        compiled = stream_compile(container_name, compile_path, args.compile_timeout)
         update_patch_verification(verification_id, compiled)
 
         if compiled['compile_rc'] != 0 or compiled['compile_timed_out']:
+            meta['stopped_after'] = 'compile_failed'
             logger.error(f"Compile did not succeed (rc={compiled['compile_rc']}"
                          + (', timed out' if compiled['compile_timed_out'] else '')
-                         + f"). Full log: {log_path}")
+                         + f"). Full log: {compile_path}")
             logger.error('A POC result after a failed compile does not reflect the '
                          'patched code. Stopping; the attempt is recorded.')
-            update_patch_verification(verification_id, {'finished_at': _now()})
             return 1
 
         # stage 4
         poc = run_poc(container_name, args.poc_timeout)
         update_patch_verification(verification_id, poc)
+        meta['stopped_after'] = 'complete'
 
-        print('\n--- Baseline Fuzzer Output ---')
+        if args.no_adjudicate:
+            logger.info('--no-adjudicate: artifacts captured, verdict deferred')
+            return 0
+
+        print('--- Baseline Fuzzer Output ---')
         print(baseline_log)
         print('------------------------------')
 
@@ -612,16 +719,24 @@ def main(argv=None) -> int:
                 compile_errors=compiled['compile_output_extract'],
             )
 
-        update_patch_verification(verification_id, {'finished_at': _now()})
         return 0
 
     except Exception as e:
+        meta['stopped_after'] = 'error'
         logger.exception(f'Verification failed for {patch_run_id}: {e}')
-        if verification_id is not None:
-            update_patch_verification(verification_id, {'finished_at': _now()})
         return 1
 
     finally:
+        # The transcript is the one artifact that always exists for an attempt,
+        # so it is written from here rather than on the success path.
+        if verification_id is not None:
+            meta['finished_at'] = _now()
+            update_patch_verification(verification_id,
+                                      {'finished_at': meta['finished_at']})
+            try:
+                write_transcript(transcript_path, meta, applied, compiled, poc)
+            except Exception as e:
+                logger.error(f'Could not write transcript to {transcript_path}: {e}')
         cleanup_container(container_name)
 
 

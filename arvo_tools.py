@@ -184,7 +184,14 @@ def prune_dind_images(keep_vuln_id, rootainer_name: str = 'rootainer',
     return removed
 
 
-def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
+def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul',
+                      timeout: Optional[int] = None):
+    """Start a standby container on the host docker.
+
+    `docker run` pulls the image implicitly when it is absent, and an arvo image
+    is ~14 GB, so callers running unattended should pass a timeout. Without one
+    an unreachable registry blocks forever.
+    """
     stby_cmd = ['docker', 'run', '-d',
                 '--privileged',
                  '--name', container_name,
@@ -193,7 +200,55 @@ def standby_container(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
                  '-f', '/dev/null'
     ]
     logger.debug(f"Starting standby container {container_name}")
-    run_command(stby_cmd)
+    run_command(stby_cmd, timeout=timeout)
+
+
+def prune_host_images(keep_vuln_id: Optional[int] = None,
+                      keep_flags=('vul',)) -> List[str]:
+    """Drop resident n132/arvo images from the HOST docker except the current
+    vuln's, so a long verification batch of distinct ids doesn't fill the disk.
+
+    Host counterpart to prune_dind_images. diff_tools.py talks to host docker via
+    standby_container, so the rootainer pruning the campaign runner relies on does
+    not cover it. An arvo image is ~14 GB, so 55 of them is ~780 GB; the
+    container's own writable layer is only ~780 MB and is reclaimed on removal.
+
+    Only '-vul' is kept by default: diff_tools.py never pulls '-fix'.
+
+    Pass keep_vuln_id=None to remove every resident arvo image.
+
+    Best-effort, like cleanup_container: docker failures are logged, never raised.
+    Returns the tags actually removed.
+    """
+    list_cmd = ['docker', 'images', 'n132/arvo', '--format', '{{.Repository}}:{{.Tag}}']
+    result = run_command(list_cmd, check=False, stdout=subprocess.PIPE)
+
+    if result.returncode != 0:
+        logger.warning(f'Could not list arvo images on the host, skipping prune: '
+                       f'{result.stderr}')
+        return []
+
+    keep = ({f'n132/arvo:{keep_vuln_id}-{flag}' for flag in keep_flags}
+            if keep_vuln_id is not None else set())
+    resident = [line.strip() for line in (result.stdout or '').splitlines() if line.strip()]
+    stale = [tag for tag in resident if tag not in keep]
+
+    if not stale:
+        logger.debug(f'No stale arvo images to prune on the host '
+                     f'(resident: {resident or "none"})')
+        return []
+
+    logger.info(f'Pruning {len(stale)} arvo image(s) from the host'
+                + (f', keeping vuln {keep_vuln_id}' if keep_vuln_id else '')
+                + f': {stale}')
+    removed = []
+    for tag in stale:
+        rmi = run_command(['docker', 'rmi', '-f', tag], check=False)
+        if rmi.returncode == 0:
+            removed.append(tag)
+        else:
+            logger.warning(f'Failed to remove host image {tag}: {rmi.stderr}')
+    return removed
 
 def standby_dind(container_name: str, vuln_id: int, fix_flag: str = 'vul'):
     dind_cmd = ['docker', 'exec', 'rootainer']

@@ -24,9 +24,24 @@ logger = logging.getLogger(__name__)
 DB_PATH = 'arvo_loc_runs.db'
 
 
+# Columns added after the table first shipped. Applied with ALTER only when
+# absent, so an existing database catches up and a fresh one created from
+# PATCH_VERIFICATION_DDL already has them.
+ADDED_COLUMNS = {
+    'transcript_path': 'TEXT',
+}
+
+
 def migrate(conn: sqlite3.Connection) -> None:
     conn.execute(PATCH_VERIFICATION_DDL)
     conn.execute(PATCH_VERIFICATION_INDEX_DDL)
+
+    existing = {r[1] for r in conn.execute('PRAGMA table_info(patch_verification)')}
+    for col, col_type in ADDED_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f'ALTER TABLE patch_verification ADD COLUMN {col} {col_type}')
+            logger.info(f'added column patch_verification.{col}')
+
     conn.commit()
     logger.info('patch_verification table and index present')
 
@@ -36,7 +51,16 @@ def backfill(conn: sqlite3.Connection, dry_run: bool = False) -> int:
 
     patch_data.patch_crash_log holds stdout and stderr concatenated, so it maps
     to poc_stdout with poc_stderr left NULL. compile_errors held stderr only.
+
+    A database with no patch_data table is a fresh one with nothing to carry
+    over, so that is a skip rather than an error.
     """
+    for table in ('patch_data', 'runs', 'arvo'):
+        if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                            "AND name = ?", (table,)).fetchone():
+            logger.info(f'backfill: no {table} table, skipping (fresh database)')
+            return 0
+
     rows = conn.execute('''
         SELECT p.run_id, p.is_crash_resolved, p.patch_crash_log, p.compile_errors,
                a.crash_output

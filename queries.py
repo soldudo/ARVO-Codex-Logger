@@ -436,9 +436,28 @@ def update_patch_crash_results(run_id: str, is_crash_resolved: bool, patch_crash
 # UPDATE-only and relies on run_parser.py pre-creating every patch_data row,
 # these own their INSERT.
 
+def get_fuzz_target(arvo_id: int, conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
+    """The fuzz target this vuln's POC exercises, for the verification transcript."""
+    should_close = False
+    if conn is None:
+        conn = _get_connection()
+        should_close = True
+    try:
+        row = conn.execute('SELECT fuzz_target FROM arvo WHERE localId = ?',
+                           (arvo_id,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.Error as e:
+        logger.error(f'DB error retrieving fuzz_target for {arvo_id}: {e}')
+        return None
+    finally:
+        if should_close:
+            conn.close()
+
+
 def start_patch_verification(run_id: str, conn: Optional[sqlite3.Connection] = None,
-                             **provenance) -> Optional[int]:
-    """Open a verification attempt and return its verification_id.
+                             **provenance):
+    """Open a verification attempt. Returns (verification_id, attempt), or
+    (None, None) on failure.
 
     attempt is MAX(attempt)+1 for the run, so re-verifying never overwrites an
     earlier verdict. Accepts any patch_verification column as a keyword.
@@ -463,12 +482,12 @@ def start_patch_verification(run_id: str, conn: Optional[sqlite3.Connection] = N
         conn.commit()
         logger.info(f'Opened verification attempt {attempt} for {run_id} '
                     f'(verification_id={cursor.lastrowid})')
-        return cursor.lastrowid
+        return cursor.lastrowid, attempt
 
     except sqlite3.Error as e:
         logger.error(f'DB error opening verification for {run_id}: {e}')
         conn.rollback()
-        return None
+        return None, None
     finally:
         if should_close:
             conn.close()

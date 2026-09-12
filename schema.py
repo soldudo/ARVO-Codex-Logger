@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS patch_verification (
     compile_duration_s REAL,
     compile_timed_out INTEGER,
 
+    -- baseline + patch + patched POC, assembled for the LLM pass
+    transcript_path   TEXT,
+
     -- stage 4: patched POC
     poc_rc            INTEGER,
     poc_stdout        TEXT,

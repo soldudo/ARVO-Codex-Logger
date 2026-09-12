@@ -1,11 +1,11 @@
 # Patch Verification Capture — Proposal
 
-> **Status:** Implemented, offline verification passed, not yet exercised against a
-> live container. Changes 1, 3, 4 and 5 are complete and the migration has run
-> (22 legacy rows backfilled as `attempt = 0`). Change 2's timeouts and streamed
-> compile are written but only the timeout values remain unmeasured — Verification
-> step 1 still needs a real ffmpeg run. Steps 2, 3, 4, 10 and 11 pass; steps 5–9
-> need docker.
+> **Status:** Implemented, offline verification passed. Changes 1, 3, 4 and 5 are
+> complete and the migration has run (22 legacy rows backfilled as `attempt = 0`).
+> Change 2's timeouts and streamed compile are written and now
+> **measurement-backed** — two ffmpeg runs report 1.87 MiB and ~932 s, so
+> `COMPILE_TIMEOUT = 3600` and the extract budget stand as written. Verification
+> steps 1, 2, 3, 4, 10 and 11 pass; steps 5-9 still need docker.
 >
 > Two things changed during implementation, both recorded below: the compile output
 > is captured as one merged stream (`compile_output_extract`) rather than split
@@ -209,6 +209,13 @@ CREATE INDEX IF NOT EXISTS idx_patch_verification_run
 to write its judgement alongside the evidence it judged, and `compile_rc` is a
 different claim from "a human or model confirmed this build is trustworthy."
 
+> **Pending amendment.** This block mirrors `schema.py` as implemented (38
+> columns). `BATCH_VERIFICATION_PROPOSAL.md` Change 1.3 adds a 39th,
+> `transcript_path`, and renames the compile artifact to
+> `compile_<run_id>_a<attempt>.log` so the run id survives in the filename once
+> artifacts are pooled for the LLM pass. Neither is implemented; update this block
+> when they land.
+
 **Backward compatibility.** `analysis/patch_eval.py:342`,
 `analysis/command_analysis.py:319` and `analysis/resume_integrity.py:287` all read
 `patch_data`. Keep writing `patch_data.is_crash_resolved`, `patch_crash_log` and
@@ -229,7 +236,7 @@ one and `refuzz` already uses `timeout=60`.
 | call site | timeout | rationale |
 |---|---|---|
 | `standby_container` (`:170`) | 1800 | implicit multi-GB `docker run` pull |
-| `arvo compile` (`:224`) | 3600 | observed ffmpeg full rebuild is ~30 min for 435 targets |
+| `arvo compile` (`:224`) | 3600 | measured ffmpeg full rebuild is 932 s for 435 targets; 3.9x headroom |
 | `arvo` (`:228`) | 120 | `refuzz` uses 60; POC replay is a single input |
 
 On `subprocess.TimeoutExpired`, record the stage with `*_timed_out = 1` and the
@@ -242,11 +249,12 @@ Extend it to tee: every line to `runs/<run_id>/compile_<attempt>.log`, a bounded
 extract to the database, and a periodic progress line to the operator's terminal.
 
 **The extract is the load-bearing detail.** `bash -eux /src/build.sh` traces every
-command across 435 link steps; the full log may be hundreds of MB, against a
-database already at 208 MB and ~107 runs still to adjudicate. So:
+command across 435 link steps. Measured at **1.87 MiB per run** — enough that 98
+of them inline would grow a 206 MiB database by 89%, and not so much that the full
+log cannot simply live on disk and be read whole. So:
 
-- full log to `runs/<run_id>/compile_<attempt>.log`, matching the existing
-  `runs/<run_id>/agent_<run_id>.log` convention
+- full log to `runs/<run_id>/compile_<attempt>.log` (renamed by
+  `BATCH_VERIFICATION_PROPOSAL.md` 1.3a — see the pending amendment above)
 - `compile_log_path` and `compile_log_bytes` in the row, so a log that has gone
   missing, been emptied, or come out implausibly small for a full rebuild is
   detectable (see Considerations for why no hash)
@@ -430,10 +438,14 @@ As a rerunnable script, not applied by hand, so it survives a database rebuild.
 
 ## Considerations
 
-- **Compile log volume is the main unknown.** The design above assumes the full
-  compile log is too large for SQLite and belongs on disk. That assumption is
-  unmeasured. Measure it on the first ffmpeg run and revisit the split if it is
-  smaller than expected.
+- **Compile log volume — measured, and smaller than assumed.** Two ffmpeg runs
+  report `compile_log_bytes = 1,955,662` (1.87 MiB) and `compile_duration_s` of
+  930 and 932. The design above assumed the log could reach hundreds of MB; it does
+  not. The on-disk split still stands, for a corrected reason: 98 full logs inline
+  would add ~183 MiB to a 206 MiB database (89% growth) for content already on
+  disk, while the bounded extracts add ~24 MiB worst case. `COMPILE_TIMEOUT = 3600`
+  is 3.9× the observed time and needs no change. Nothing in the LLM path truncates
+  the compile log — it is fed whole and is consumed successfully at this size.
 - **Compile stdout and stderr are merged into `compile_output_extract`.** The plan
   originally split them. Separating them while streaming needs two reader threads,
   and it destroys the property that makes the log worth reading: `build.sh` runs
@@ -540,9 +552,10 @@ As a rerunnable script, not applied by hand, so it survives a database rebuild.
 
 ## Verification steps
 
-1. Instrument `arvo compile` on one ffmpeg run and record actual stdout/stderr byte
-   counts and wall time. Fix the extract budget and the 3600s timeout against that
-   measurement rather than the estimate.
+1. ~~Instrument `arvo compile` on one ffmpeg run and record actual byte counts and
+   wall time.~~ **Done.** Two ffmpeg runs: 1,955,662 bytes (1.87 MiB) each, 930 s
+   and 932 s. `COMPILE_TIMEOUT = 3600` kept (3.9× headroom), extract budget kept,
+   on-disk split kept. See the Considerations entry for the corrected reasoning.
 2. Run the recount over all 127 stored diffs offline and confirm the outcome table
    moves to `malformed = 0` with no run regressing from `ok` to `fail`.
 3. Unit-test recount against the four shapes present in the data, expressed as the
@@ -592,7 +605,7 @@ reporting policy is a separate decision.
 verification that it does not compromise experiment accuracy. `arvo compile`
 currently rebuilds all 435 decoder fuzzers to reach the one the vuln needs — for
 `arvo-42540891` it was observed building `target_dec_fraps_fuzzer` while the vuln's
-target is `ffmpeg_AV_CODEC_ID_JPEGLS_fuzzer`. Narrowing would cut ~30 min per run to
+target is `ffmpeg_AV_CODEC_ID_JPEGLS_fuzzer`. Narrowing would cut the measured 932 s per run to
 ~1–2 min and remove the disk risk, so it is worth establishing. The accuracy
 question to settle first is whether a narrowed build produces a byte-identical
 target binary: build both ways for the same vuln and compare the target binary's

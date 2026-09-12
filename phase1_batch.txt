@@ -1,0 +1,127 @@
+# Phase 1 batch for verify_batch.py --ids-file
+# Generated 2026-09-11 from arvo_loc_runs.db. See BATCH_VERIFICATION_PROPOSAL.md.
+#
+# Filter: run_mode=patch, result_error_flag=0, result_json contains a diff,
+#         patch_data.{is_crash_resolved,patch_crash_log,compile_errors} all NULL,
+#         excluding patch runs paired with a RUN_DATA_MAP.md Class 1 broken resume.
+#
+# 98 runs across 55 vulns. Grouped by project then vuln so each arvo image is
+# pulled once and reused by every run that shares it.
+
+# --- PcapPlusPlus (1 runs) ---
+arvo-42532853-vul-1775455728-patch
+
+# --- ffmpeg (77 runs) ---
+arvo-42536326-vul-1784850070-patch
+arvo-42536326-vul-1785993300-patch
+arvo-42536483-vul-1784656764-patch
+arvo-42536483-vul-1785344139-patch
+arvo-42537352-vul-1784770102-patch
+arvo-42537562-vul-1784862397-patch
+arvo-42537562-vul-1786422474-patch
+arvo-42537563-vul-1784677062-patch
+arvo-42537563-vul-1785993783-patch
+arvo-42537564-vul-1784789100-patch
+arvo-42537564-vul-1786423489-patch
+arvo-42537565-vul-1784666240-patch
+arvo-42537565-vul-1786424239-patch
+arvo-42537575-vul-1784730759-patch
+arvo-42537580-vul-1784696100-patch
+arvo-42537580-vul-1786011300-patch
+arvo-42537586-vul-1784667089-patch
+arvo-42537586-vul-1786440900-patch
+arvo-42537600-vul-1784863271-patch
+arvo-42537600-vul-1787184655-patch
+arvo-42537608-vul-1784789149-patch
+arvo-42537611-vul-1784657370-patch
+arvo-42537611-vul-1785329955-patch
+arvo-42537614-vul-1784759111-patch
+arvo-42537614-vul-1786011464-patch
+arvo-42537616-vul-1784677945-patch
+arvo-42537616-vul-1786440999-patch
+arvo-42537634-vul-1784760119-patch
+arvo-42537634-vul-1786012317-patch
+arvo-42537640-vul-1784731873-patch
+arvo-42537640-vul-1786458900-patch
+arvo-42537660-vul-1784864161-patch
+arvo-42537662-vul-1784924280-patch
+arvo-42537664-vul-1784865288-patch
+arvo-42537664-vul-1785335700-patch
+arvo-42537683-vul-1784668758-patch
+arvo-42537683-vul-1786048172-patch
+arvo-42537686-vul-1784772250-patch
+arvo-42537686-vul-1785390533-patch
+arvo-42537687-vul-1784866663-patch
+arvo-42537687-vul-1785427797-patch
+arvo-42537748-vul-1784696821-patch
+arvo-42537748-vul-1785446700-patch
+arvo-42537769-vul-1784697711-patch
+arvo-42537769-vul-1786476900-patch
+arvo-42537772-vul-1784822207-patch
+arvo-42537773-vul-1784823321-patch
+arvo-42537773-vul-1786477048-patch
+arvo-42537788-vul-1784812187-patch
+arvo-42537788-vul-1787186044-patch
+arvo-42537828-vul-1784749500-patch
+arvo-42537859-vul-1784867888-patch
+arvo-42537859-vul-1786512900-patch
+arvo-42539050-vul-1784678996-patch
+arvo-42539050-vul-1785371907-patch
+arvo-42539789-vul-1784790717-patch
+arvo-42539911-vul-1784851931-patch
+arvo-42539911-vul-1784928629-patch
+arvo-42539911-vul-1786065607-patch
+arvo-42539919-vul-1784345700-patch
+arvo-42539919-vul-1785317700-patch
+arvo-42540556-vul-1784328211-patch
+arvo-42540880-vul-1784327700-patch
+arvo-42540880-vul-1785281628-patch
+arvo-42540891-vul-1784232900-patch
+arvo-42540891-vul-1785207325-patch
+arvo-42541030-vul-1784216684-patch
+arvo-42541030-vul-1785164007-patch
+arvo-42541144-vul-1784216642-patch
+arvo-42541144-vul-1785161783-patch
+arvo-42541206-vul-1773874578-patch
+arvo-42541206-vul-1773884497-patch
+arvo-42541206-vul-1775169854-patch
+arvo-42541206-vul-1775456552-patch
+arvo-42541206-vul-1785161232-patch
+arvo-42541443-vul-1784196900-patch
+arvo-42541443-vul-1785005319-patch
+
+# --- geos (3 runs) ---
+arvo-42532863-vul-1773932307-patch
+arvo-42532863-vul-1775168687-patch
+arvo-42532863-vul-1775455928-patch
+
+# --- libtpms (1 runs) ---
+arvo-42531667-vul-1775154529-patch
+
+# --- libxml2 (7 runs) ---
+arvo-42528951-vul-1773874240-patch
+arvo-42529030-vul-1773874664-patch
+arvo-42529030-vul-1775485642-patch
+arvo-424242614-vul-1773830022-patch
+arvo-424242614-vul-1773830299-patch
+arvo-424242614-vul-1773871783-patch
+arvo-424627221-vul-1784183112-patch
+
+# --- mruby (3 runs) ---
+arvo-42534486-vul-1773874004-patch
+arvo-42538183-vul-1773931239-patch
+arvo-42538183-vul-1775169413-patch
+
+# --- mupdf (1 runs) ---
+arvo-370032378-vul-1773884362-patch
+
+# --- ndpi (1 runs) ---
+arvo-437162340-vul-1773872626-patch
+
+# --- opensc (1 runs) ---
+arvo-42530547-vul-1773882290-patch
+
+# --- php-src (3 runs) ---
+arvo-42531112-vul-1773870678-patch
+arvo-419085594-vul-1773872761-patch
+arvo-419085594-vul-1775194674-patch
